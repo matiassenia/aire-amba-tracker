@@ -6,7 +6,7 @@ import "leaflet.heat";
 type HeatPoint = {
   lat: number;
   lon: number;
-  aqi: number; // numérico
+  aqi: number;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -14,56 +14,55 @@ function clamp(n: number, min: number, max: number) {
 }
 
 /**
- * Mapea AQI a intensidad 0..1 con curva “con estilo”:
- * - levanta medios/bajos para que se note
- * - capea extremos para no quemar el mapa
+ * Apple-ish:
+ * - suave (no “neón”)
+ * - más contraste en medios sin quemar los extremos
  */
 function aqiToIntensity(aqi: number) {
-  const capped = clamp(aqi, 0, 200); // cap suave
-  const t = capped / 200; // 0..1
-  const boosted = Math.pow(t, 0.65); // sube medios/bajos
+  const capped = clamp(aqi, 0, 180);
+  const t = capped / 180;
+
+  // curva suave tipo “Apple Weather”
+  // (menos agresiva que un pow bajo, más “airy”)
+  const boosted = Math.pow(t, 0.75);
+
   return clamp(boosted, 0, 1);
 }
 
 export function HeatLayer({
   points,
-  radius = 38,
-  blur = 28,
+  radius = 42,
+  blur = 30,
   maxZoom = 13,
   minOpacity = 0.18,
+  gradient,
 }: {
   points: HeatPoint[];
   radius?: number;
   blur?: number;
   maxZoom?: number;
-    minOpacity?: number;
-    gradient: {
-      0.0: "#2FBF71",
-      0.45: "#F2C14E",
-      0.70: "#F39C6B",
-      0.88: "#E96B5A",
-      1.0: "B07CF7",
-    }
-  })
-
-  {
+  minOpacity?: number;
+  gradient?: Record<number, string>;
+}) {
   const map = useMap();
 
   const heatData = useMemo(() => {
-    // leaflet.heat acepta [lat, lon, intensity]
-    return points.map((p) => [p.lat, p.lon, aqiToIntensity(p.aqi)] as [number, number, number]);
+    return points.map(
+      (p) => [p.lat, p.lon, aqiToIntensity(p.aqi)] as [number, number, number]
+    );
   }, [points]);
 
   useEffect(() => {
     if (!map) return;
     if (!heatData.length) return;
 
-    // @ts-expect-error: leaflet.heat agrega L.heatLayer a runtime
+    // @ts-expect-error leaflet.heat agrega L.heatLayer en runtime
     const layer = L.heatLayer(heatData, {
       radius,
       blur,
       maxZoom,
       minOpacity,
+      ...(gradient ? { gradient } : {}),
     });
 
     layer.addTo(map);
@@ -71,7 +70,7 @@ export function HeatLayer({
     return () => {
       map.removeLayer(layer);
     };
-  }, [map, heatData, radius, blur, maxZoom, minOpacity]);
+  }, [map, heatData, radius, blur, maxZoom, minOpacity, gradient]);
 
   return null;
 }

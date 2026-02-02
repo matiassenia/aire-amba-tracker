@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, Polygon } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Popup,
+  Polygon,
+} from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
+
 import { HeatLayer } from "@/components/HeatLayer";
 import { buildGrid, fetchAqiByGeo, type WaqiGeoPoint } from "@/lib/waqi";
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
+import { buildDenseGrid, idwEstimate } from "@/lib/idw";
 
 // Paleta AQI “Apple-like”: misma semántica, menos saturación “arcade”
 function aqiColor(aqi: number) {
-  if (aqi <= 50) return "#2FBF71";     // soft green
-  if (aqi <= 100) return "#F2C14E";    // warm yellow
-  if (aqi <= 150) return "#F39C6B";    // soft orange
-  if (aqi <= 200) return "#E96B5A";    // soft red
-  if (aqi <= 300) return "#B07CF7";    // soft purple
-  return "#7A1E2C";                    // maroon
+  if (aqi <= 50) return "#2FBF71"; // soft green
+  if (aqi <= 100) return "#F2C14E"; // warm yellow
+  if (aqi <= 150) return "#F39C6B"; // soft orange
+  if (aqi <= 200) return "#E96B5A"; // soft red
+  if (aqi <= 300) return "#B07CF7"; // soft purple
+  return "#7A1E2C"; // maroon
 }
 
 function aqiLabel(aqi: number) {
@@ -47,7 +51,6 @@ function extractRings(geo: GeoJSONLike): LatLngExpression[][] {
     if (!g) continue;
 
     if (g.type === "Polygon") {
-      // coordinates: [ [ [lon,lat], ... ] (outer ring), [hole1], ...]
       const outer = g.coordinates?.[0];
       if (outer?.length) {
         rings.push(outer.map(([lon, lat]: [number, number]) => [lat, lon]));
@@ -55,7 +58,6 @@ function extractRings(geo: GeoJSONLike): LatLngExpression[][] {
     }
 
     if (g.type === "MultiPolygon") {
-      // coordinates: [ Polygon, Polygon, ... ] each Polygon = [outer, holes...]
       for (const poly of g.coordinates ?? []) {
         const outer = poly?.[0];
         if (outer?.length) {
@@ -76,14 +78,14 @@ export function MapView() {
   const bbox = useMemo(
     () => ({
       south: -34.95,
-      west: -59.10,
+      west: -59.1,
       north: -34.35,
       east: -58.05,
     }),
     []
   );
 
-  // Grilla (≈ 24 puntos)
+  // Grilla WAQI (≈ 24 puntos)
   const grid = useMemo(
     () =>
       buildGrid({
@@ -114,7 +116,6 @@ export function MapView() {
         const rings = extractRings(geo);
         if (!cancelled) setMaskRings(rings);
       } catch (e: any) {
-        // no bloquea la app: sólo no habrá mask
         console.warn("Mask geojson error:", e?.message ?? e);
       }
     }
@@ -183,7 +184,7 @@ export function MapView() {
       if (typeof p.aqi !== "number") return false;
       const { lat, lon } = p;
 
-      if (lon > -58.2) return false; // río
+      if (lon > -58.2) return false; // Río
       if (lat > -34.35 || lat < -34.98) return false;
       if (lon < -59.25) return false;
 
@@ -191,7 +192,38 @@ export function MapView() {
     });
   }, [points]);
 
-  // Summary Apple-like: promedio
+  // 🧠 IDW: campo continuo (grilla densa)
+  const idwHeatPoints = useMemo(() => {
+    const samples = filteredPoints.map((p) => ({
+      lat: p.lat,
+      lon: p.lon,
+      value: p.aqi as number,
+    }));
+
+    if (samples.length < 3) return [];
+
+    // Más denso = más suave (pero más costo). Esto sigue siendo liviano.
+    const dense = buildDenseGrid(bbox, { stepLat: 0.035, stepLon: 0.035 });
+
+    const out: { lat: number; lon: number; aqi: number }[] = [];
+
+    for (const pt of dense) {
+      const est = idwEstimate(pt, samples, {
+        power: 2,
+        k: 8,
+        maxDistKm: 35,
+        minPoints: 3,
+      });
+
+      if (typeof est === "number") {
+        out.push({ lat: pt.lat, lon: pt.lon, aqi: est });
+      }
+    }
+
+    return out;
+  }, [filteredPoints, bbox]);
+
+  // Promedio “Apple-like”
   const avgAqi = useMemo(() => {
     const aqis = filteredPoints.map((p) => p.aqi as number);
     if (!aqis.length) return null;
@@ -202,7 +234,6 @@ export function MapView() {
   const inverseMaskPositions = useMemo(() => {
     if (!maskRings.length) return null;
 
-    // “world ring” enorme (outer)
     const world: LatLngExpression[] = [
       [85, -180],
       [85, 180],
@@ -210,11 +241,7 @@ export function MapView() {
       [-85, -180],
     ];
 
-    // Leaflet Polygon soporta holes: [outer, hole1, hole2...]
-    // si hay multipolígonos, agregamos varios holes (uno por ring)
-    const holes = maskRings;
-
-    return [world, ...holes] as any;
+    return [world, ...maskRings] as any;
   }, [maskRings]);
 
   return (
@@ -238,10 +265,19 @@ export function MapView() {
           fontSize: 12,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            gap: 10,
+          }}
+        >
           <div>
             <div style={{ fontWeight: 800, letterSpacing: 0.2 }}>Aire AMBA</div>
-            <div style={{ opacity: 0.70, fontSize: 11 }}>WAQI · estimación por muestreo</div>
+            <div style={{ opacity: 0.7, fontSize: 11 }}>
+              WAQI · estimación por muestreo (IDW)
+            </div>
           </div>
 
           {avgAqi != null && (
@@ -272,7 +308,14 @@ export function MapView() {
           )}
         </div>
 
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
           {loading ? (
             <div style={{ opacity: 0.85 }}>
               Cargando… {progress.done}/{progress.total}
@@ -281,18 +324,23 @@ export function MapView() {
             <div style={{ color: "#c0392b" }}>{err}</div>
           ) : (
             <div style={{ opacity: 0.85 }}>
-              {filteredPoints.length} puntos ·{" "}
-              {lastUpdate ? lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+              {filteredPoints.length} muestras ·{" "}
+              {lastUpdate
+                ? lastUpdate.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : ""}
             </div>
           )}
 
-          <div style={{ opacity: 0.60, fontSize: 11 }}>
+          <div style={{ opacity: 0.6, fontSize: 11 }}>
             {avgAqi != null ? aqiLabel(avgAqi) : ""}
           </div>
         </div>
 
-        <div style={{ marginTop: 10, opacity: 0.60, fontSize: 11 }}>
-          Mask: {maskRings.length ? "AMBA clip (GeoJSON)" : "sin GeoJSON (mostrando todo)"}
+        <div style={{ marginTop: 10, opacity: 0.6, fontSize: 11 }}>
+          Mask: {maskRings.length ? "AMBA clip (GeoJSON)" : "sin GeoJSON"}
         </div>
       </div>
 
@@ -302,38 +350,40 @@ export function MapView() {
         style={{ height: "100%", width: "100%" }}
         scrollWheelZoom
       >
-        {/* Base map “Apple-ish” */}
         <TileLayer
           attribution='&copy; OpenStreetMap contributors &copy; CARTO'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
 
-        {/* 🔥 Heatmap suave */}
+        {/* 🔥 Heatmap con IDW (campo continuo) */}
         <HeatLayer
-          points={filteredPoints.map((p) => ({
-            lat: p.lat,
-            lon: p.lon,
-            aqi: p.aqi as number,
-          }))}
-          radius={42}
-          blur={30}
-          minOpacity={0.18}
+          points={idwHeatPoints}
+          radius={55}
+          blur={45}
+          minOpacity={0.20}
           maxZoom={13}
+          gradient={{
+            0.0: "#2FBF71",
+            0.45: "#F2C14E",
+            0.70: "#F39C6B",
+            0.88: "#E96B5A",
+            1.0: "#B07CF7",
+          }}
         />
 
-        {/* Mask inverso (hole) → “clip” visual */}
+        {/* Mask inverso (hole) */}
         {inverseMaskPositions && (
           <Polygon
             positions={inverseMaskPositions}
             pathOptions={{
               stroke: false,
               fillColor: "#ffffff",
-              fillOpacity: 0.55, // Apple-style “fog” fuera del área
+              fillOpacity: 0.45,
             }}
           />
         )}
 
-        {/* Puntos muy sutiles (borde blanco) */}
+        {/* 🔎 Muestras WAQI (clickeables). Ojo: esto NO es barrio, es “punto mostrado”. */}
         {filteredPoints.map((p, idx) => {
           const aqi = p.aqi as number;
           const color = aqiColor(aqi);
@@ -342,10 +392,10 @@ export function MapView() {
             <CircleMarker
               key={`pt-${p.lat},${p.lon},${idx}`}
               center={[p.lat, p.lon]}
-              radius={4}
+              radius={3.5}
               pathOptions={{
                 color: "rgba(255,255,255,0.95)",
-                weight: 2,
+                weight: 1.5,
                 opacity: 0.85,
                 fillColor: color,
                 fillOpacity: 0.85,
@@ -353,8 +403,21 @@ export function MapView() {
             >
               <Popup>
                 <div style={{ minWidth: 230 }}>
-                  <div style={{ fontWeight: 800, fontSize: 13 }}>{p.name ?? "Punto AMBA"}</div>
-                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontWeight: 800, fontSize: 13 }}>
+                    Muestra WAQI (punto muestreado)
+                  </div>
+                  <div style={{ opacity: 0.7, fontSize: 11 }}>
+                    Estimación por estación más cercana
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
                     <span
                       style={{
                         width: 10,
@@ -367,9 +430,12 @@ export function MapView() {
                     />
                     <div>
                       AQI: <b>{aqi}</b>
-                      <div style={{ opacity: 0.75, fontSize: 11 }}>{aqiLabel(aqi)}</div>
+                      <div style={{ opacity: 0.75, fontSize: 11 }}>
+                        {aqiLabel(aqi)}
+                      </div>
                     </div>
                   </div>
+
                   <div style={{ opacity: 0.7, fontSize: 11, marginTop: 8 }}>
                     ({p.lat.toFixed(4)}, {p.lon.toFixed(4)})
                   </div>
