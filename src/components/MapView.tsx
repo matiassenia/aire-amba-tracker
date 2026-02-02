@@ -11,15 +11,27 @@ import type { LatLngExpression } from "leaflet";
 import { HeatLayer } from "@/components/HeatLayer";
 import { buildGrid, fetchAqiByGeo, type WaqiGeoPoint } from "@/lib/waqi";
 import { buildDenseGrid, idwEstimate } from "@/lib/idw";
+import { useMapEvent } from "react-leaflet";
+import { useZones } from "@/state/useZones";
+import { ZoneLayer } from "@/components/map/ZoneLayer";
+import { getZoneId } from "@/lib/geo/geojson";
+import type { ZoneFeature } from "@/lib/geo/geojson";
 
-// Paleta AQI “Apple-like”: misma semántica, menos saturación “arcade”
+
+
+function MapClickClear({ onClear }: { onClear: () => void }) {
+    useMapEvent("click", () => onClear());
+    return null;
+  }
+
+// Paleta AQI “Apple-like”
 function aqiColor(aqi: number) {
-  if (aqi <= 50) return "#2FBF71"; // soft green
-  if (aqi <= 100) return "#F2C14E"; // warm yellow
-  if (aqi <= 150) return "#F39C6B"; // soft orange
-  if (aqi <= 200) return "#E96B5A"; // soft red
-  if (aqi <= 300) return "#B07CF7"; // soft purple
-  return "#7A1E2C"; // maroon
+  if (aqi <= 50) return "#2FBF71";
+  if (aqi <= 100) return "#F2C14E";
+  if (aqi <= 150) return "#F39C6B";
+  if (aqi <= 200) return "#E96B5A";
+  if (aqi <= 300) return "#B07CF7";
+  return "#7A1E2C";
 }
 
 function aqiLabel(aqi: number) {
@@ -42,7 +54,7 @@ type GeoJSONLike = {
   }>;
 };
 
-// Convierte Polygon/MultiPolygon GeoJSON -> lista de “rings” (cada ring: LatLngExpression[])
+// (opcional) si seguís usando mask rings desde /amba.geojson
 function extractRings(geo: GeoJSONLike): LatLngExpression[][] {
   const rings: LatLngExpression[][] = [];
 
@@ -70,9 +82,23 @@ function extractRings(geo: GeoJSONLike): LatLngExpression[][] {
   return rings;
 }
 
+// ✅ gradient tipado correctamente
+const HEAT_GRADIENT = {
+  0: "#2FBF71",
+  0.45: "#F2C14E",
+  0.7: "#F39C6B",
+  0.88: "#E96B5A",
+  1: "#B07CF7",
+} as const satisfies Record<number, string>;
+
 export function MapView() {
   const center: [number, number] = [-34.6037, -58.3816];
   const token = import.meta.env.VITE_WAQI_TOKEN as string | undefined;
+
+  // ✅ Zonas (GeoJSON barrios/partidos)
+  const { zones, loading: zonesLoading, err: zonesErr } = useZones("/amba.geojson");
+  const [selectedZone, setSelectedZone] = useState<ZoneFeature | null>(null);
+  const selectedId = selectedZone ? getZoneId(selectedZone, 0) : null;
 
   // AMBA bbox
   const bbox = useMemo(
@@ -102,7 +128,7 @@ export function MapView() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: grid.length });
 
-  // GeoJSON mask
+  // Mask inversa (fog outside)
   const [maskRings, setMaskRings] = useState<LatLngExpression[][]>([]);
 
   useEffect(() => {
@@ -116,6 +142,7 @@ export function MapView() {
         const rings = extractRings(geo);
         if (!cancelled) setMaskRings(rings);
       } catch (e: any) {
+        // no bloquea la app
         console.warn("Mask geojson error:", e?.message ?? e);
       }
     }
@@ -126,6 +153,7 @@ export function MapView() {
     };
   }, []);
 
+  // Carga WAQI por grilla (muestreo)
   useEffect(() => {
     let cancelled = false;
 
@@ -178,7 +206,7 @@ export function MapView() {
     };
   }, [grid, token]);
 
-  // ✅ Recorte heurístico (evita río / outliers)
+  // Recorte heurístico (evita río / outliers)
   const filteredPoints = useMemo(() => {
     return points.filter((p) => {
       if (typeof p.aqi !== "number") return false;
@@ -192,7 +220,7 @@ export function MapView() {
     });
   }, [points]);
 
-  // 🧠 IDW: campo continuo (grilla densa)
+  // IDW: campo continuo
   const idwHeatPoints = useMemo(() => {
     const samples = filteredPoints.map((p) => ({
       lat: p.lat,
@@ -202,7 +230,6 @@ export function MapView() {
 
     if (samples.length < 3) return [];
 
-    // Más denso = más suave (pero más costo). Esto sigue siendo liviano.
     const dense = buildDenseGrid(bbox, { stepLat: 0.035, stepLon: 0.035 });
 
     const out: { lat: number; lon: number; aqi: number }[] = [];
@@ -215,22 +242,20 @@ export function MapView() {
         minPoints: 3,
       });
 
-      if (typeof est === "number") {
-        out.push({ lat: pt.lat, lon: pt.lon, aqi: est });
-      }
+      if (typeof est === "number") out.push({ lat: pt.lat, lon: pt.lon, aqi: est });
     }
 
     return out;
   }, [filteredPoints, bbox]);
 
-  // Promedio “Apple-like”
+  // Promedio
   const avgAqi = useMemo(() => {
     const aqis = filteredPoints.map((p) => p.aqi as number);
     if (!aqis.length) return null;
     return Math.round(aqis.reduce((a, b) => a + b, 0) / aqis.length);
   }, [filteredPoints]);
 
-  // 🔳 Polígono inverso (mask con hole)
+  // Mask inversa (outer world + holes)
   const inverseMaskPositions = useMemo(() => {
     if (!maskRings.length) return null;
 
@@ -246,14 +271,14 @@ export function MapView() {
 
   return (
     <div style={{ height: "100%", width: "100%", position: "relative" }}>
-      {/* HUD minimal “Apple Weather” */}
+      {/* HUD */}
       <div
         style={{
           position: "absolute",
           zIndex: 1000,
           top: 12,
           right: 12,
-          width: 340,
+          width: 360,
           maxWidth: "calc(100% - 24px)",
           background: "rgba(255,255,255,0.80)",
           backdropFilter: "blur(12px)",
@@ -265,19 +290,10 @@ export function MapView() {
           fontSize: 12,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            gap: 10,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
           <div>
             <div style={{ fontWeight: 800, letterSpacing: 0.2 }}>Aire AMBA</div>
-            <div style={{ opacity: 0.7, fontSize: 11 }}>
-              WAQI · estimación por muestreo (IDW)
-            </div>
+            <div style={{ opacity: 0.7, fontSize: 11 }}>WAQI · muestreo + IDW</div>
           </div>
 
           {avgAqi != null && (
@@ -291,7 +307,6 @@ export function MapView() {
                 background: "rgba(255,255,255,0.75)",
                 border: "1px solid rgba(0,0,0,0.06)",
               }}
-              title="Promedio estimado"
             >
               <span
                 style={{
@@ -308,14 +323,7 @@ export function MapView() {
           )}
         </div>
 
-        <div
-          style={{
-            marginTop: 10,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 10,
-          }}
-        >
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 10 }}>
           {loading ? (
             <div style={{ opacity: 0.85 }}>
               Cargando… {progress.done}/{progress.total}
@@ -325,22 +333,17 @@ export function MapView() {
           ) : (
             <div style={{ opacity: 0.85 }}>
               {filteredPoints.length} muestras ·{" "}
-              {lastUpdate
-                ? lastUpdate.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : ""}
+              {lastUpdate ? lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
             </div>
           )}
-
-          <div style={{ opacity: 0.6, fontSize: 11 }}>
-            {avgAqi != null ? aqiLabel(avgAqi) : ""}
-          </div>
+          <div style={{ opacity: 0.60, fontSize: 11 }}>{avgAqi != null ? aqiLabel(avgAqi) : ""}</div>
         </div>
 
-        <div style={{ marginTop: 10, opacity: 0.6, fontSize: 11 }}>
-          Mask: {maskRings.length ? "AMBA clip (GeoJSON)" : "sin GeoJSON"}
+        <div style={{ marginTop: 10, opacity: 0.60, fontSize: 11 }}>
+          Zonas: {zonesLoading ? "cargando…" : zonesErr ? "error" : zones?.features?.length ?? 0}
+          {" · "}
+          Mask: {maskRings.length ? "ON" : "OFF"}
+          {selectedZone ? " · Selección: " + (selectedZone.properties?.name ?? "zona") : ""}
         </div>
       </div>
 
@@ -348,30 +351,35 @@ export function MapView() {
         center={center}
         zoom={11}
         style={{ height: "100%", width: "100%" }}
-        scrollWheelZoom
-      >
+              scrollWheelZoom
+          >
+        <MapClickClear onClear={ ()=> setSelectedZone(null)} />
+      
         <TileLayer
           attribution='&copy; OpenStreetMap contributors &copy; CARTO'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
 
-        {/* 🔥 Heatmap con IDW (campo continuo) */}
+        {/* Zonas arriba del basemap, debajo del heat (para que el heat “bañe” encima) */}
+        {zones?.features?.length ? (
+          <ZoneLayer
+            features={zones.features}
+            selectedId={selectedId}
+            onSelect={(f) => setSelectedZone(f)}
+          />
+        ) : null}
+
+        {/* Heat IDW */}
         <HeatLayer
           points={idwHeatPoints}
           radius={55}
           blur={45}
-          minOpacity={0.20}
+          minOpacity={0.2}
           maxZoom={13}
-          gradient={{
-            0.0: "#2FBF71",
-            0.45: "#F2C14E",
-            0.70: "#F39C6B",
-            0.88: "#E96B5A",
-            1.0: "#B07CF7",
-          }}
+          gradient={HEAT_GRADIENT}
         />
 
-        {/* Mask inverso (hole) */}
+        {/* Mask inversa */}
         {inverseMaskPositions && (
           <Polygon
             positions={inverseMaskPositions}
@@ -383,7 +391,7 @@ export function MapView() {
           />
         )}
 
-        {/* 🔎 Muestras WAQI (clickeables). Ojo: esto NO es barrio, es “punto mostrado”. */}
+        {/* Puntos WAQI */}
         {filteredPoints.map((p, idx) => {
           const aqi = p.aqi as number;
           const color = aqiColor(aqi);
@@ -403,21 +411,10 @@ export function MapView() {
             >
               <Popup>
                 <div style={{ minWidth: 230 }}>
-                  <div style={{ fontWeight: 800, fontSize: 13 }}>
-                    Muestra WAQI (punto muestreado)
-                  </div>
-                  <div style={{ opacity: 0.7, fontSize: 11 }}>
-                    Estimación por estación más cercana
-                  </div>
+                  <div style={{ fontWeight: 800, fontSize: 13 }}>Muestra WAQI</div>
+                  <div style={{ opacity: 0.7, fontSize: 11 }}>Estimación por estación más cercana</div>
 
-                  <div
-                    style={{
-                      marginTop: 8,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                    }}
-                  >
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
                     <span
                       style={{
                         width: 10,
@@ -430,9 +427,7 @@ export function MapView() {
                     />
                     <div>
                       AQI: <b>{aqi}</b>
-                      <div style={{ opacity: 0.75, fontSize: 11 }}>
-                        {aqiLabel(aqi)}
-                      </div>
+                      <div style={{ opacity: 0.75, fontSize: 11 }}>{aqiLabel(aqi)}</div>
                     </div>
                   </div>
 
