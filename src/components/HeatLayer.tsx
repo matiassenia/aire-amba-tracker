@@ -36,8 +36,17 @@ export function HeatLayer({
   radius?: number;
   blur?: number;
   maxZoom?: number;
-  minOpacity?: number;
-}) {
+    minOpacity?: number;
+    gradient: {
+      0.0: "#2FBF71",
+      0.45: "#F2C14E",
+      0.70: "#F39C6B",
+      0.88: "#E96B5A",
+      1.0: "B07CF7",
+    }
+  })
+
+  {
   const map = useMap();
 
   const heatData = useMemo(() => {

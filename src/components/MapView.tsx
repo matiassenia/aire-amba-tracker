@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Popup, Polygon } from "react-leaflet";
+import type { LatLngExpression } from "leaflet";
 import { HeatLayer } from "@/components/HeatLayer";
 import { buildGrid, fetchAqiByGeo, type WaqiGeoPoint } from "@/lib/waqi";
 
@@ -7,13 +8,14 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+// Paleta AQI “Apple-like”: misma semántica, menos saturación “arcade”
 function aqiColor(aqi: number) {
-  if (aqi <= 50) return "#22c55e"; // green
-  if (aqi <= 100) return "#eab308"; // yellow
-  if (aqi <= 150) return "#f97316"; // orange
-  if (aqi <= 200) return "#ef4444"; // red
-  if (aqi <= 300) return "#a855f7"; // purple
-  return "#7f1d1d"; // maroon
+  if (aqi <= 50) return "#2FBF71";     // soft green
+  if (aqi <= 100) return "#F2C14E";    // warm yellow
+  if (aqi <= 150) return "#F39C6B";    // soft orange
+  if (aqi <= 200) return "#E96B5A";    // soft red
+  if (aqi <= 300) return "#B07CF7";    // soft purple
+  return "#7A1E2C";                    // maroon
 }
 
 function aqiLabel(aqi: number) {
@@ -25,8 +27,45 @@ function aqiLabel(aqi: number) {
   return "Peligroso";
 }
 
-function formatTime(d: Date) {
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+type GeoJSONLike = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: {
+      type: "Polygon" | "MultiPolygon";
+      coordinates: any;
+    };
+  }>;
+};
+
+// Convierte Polygon/MultiPolygon GeoJSON -> lista de “rings” (cada ring: LatLngExpression[])
+function extractRings(geo: GeoJSONLike): LatLngExpression[][] {
+  const rings: LatLngExpression[][] = [];
+
+  for (const f of geo.features ?? []) {
+    const g = f.geometry;
+    if (!g) continue;
+
+    if (g.type === "Polygon") {
+      // coordinates: [ [ [lon,lat], ... ] (outer ring), [hole1], ...]
+      const outer = g.coordinates?.[0];
+      if (outer?.length) {
+        rings.push(outer.map(([lon, lat]: [number, number]) => [lat, lon]));
+      }
+    }
+
+    if (g.type === "MultiPolygon") {
+      // coordinates: [ Polygon, Polygon, ... ] each Polygon = [outer, holes...]
+      for (const poly of g.coordinates ?? []) {
+        const outer = poly?.[0];
+        if (outer?.length) {
+          rings.push(outer.map(([lon, lat]: [number, number]) => [lat, lon]));
+        }
+      }
+    }
+  }
+
+  return rings;
 }
 
 export function MapView() {
@@ -60,7 +99,31 @@ export function MapView() {
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: grid.length });
-  const [refreshKey, setRefreshKey] = useState(0);
+
+  // GeoJSON mask
+  const [maskRings, setMaskRings] = useState<LatLngExpression[][]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMask() {
+      try {
+        const res = await fetch("/amba.geojson", { cache: "no-store" });
+        if (!res.ok) throw new Error("No se pudo cargar /amba.geojson");
+        const geo = (await res.json()) as GeoJSONLike;
+        const rings = extractRings(geo);
+        if (!cancelled) setMaskRings(rings);
+      } catch (e: any) {
+        // no bloquea la app: sólo no habrá mask
+        console.warn("Mask geojson error:", e?.message ?? e);
+      }
+    }
+
+    loadMask();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +154,7 @@ export function MapView() {
           }
 
           setProgress({ done: i + 1, total: grid.length });
-          await new Promise((r) => setTimeout(r, 250)); // throttle (cuidamos WAQI)
+          await new Promise((r) => setTimeout(r, 250)); // throttle
         }
 
         if (!cancelled) {
@@ -112,7 +175,7 @@ export function MapView() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [grid, token, refreshKey]);
+  }, [grid, token]);
 
   // ✅ Recorte heurístico (evita río / outliers)
   const filteredPoints = useMemo(() => {
@@ -128,189 +191,108 @@ export function MapView() {
     });
   }, [points]);
 
-  // 📌 Resumen útil: promedio + peor punto
-  const summary = useMemo(() => {
+  // Summary Apple-like: promedio
+  const avgAqi = useMemo(() => {
     const aqis = filteredPoints.map((p) => p.aqi as number);
     if (!aqis.length) return null;
-
-    const avg = aqis.reduce((a, b) => a + b, 0) / aqis.length;
-    const max = Math.max(...aqis);
-    const maxPoint = filteredPoints.find((p) => (p.aqi as number) === max);
-
-    return {
-      avg: Math.round(avg),
-      max,
-      maxPoint,
-    };
+    return Math.round(aqis.reduce((a, b) => a + b, 0) / aqis.length);
   }, [filteredPoints]);
 
-  const legend = (
-    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
-      {[
-        { label: "0–50", c: "#22c55e" },
-        { label: "51–100", c: "#eab308" },
-        { label: "101–150", c: "#f97316" },
-        { label: "151–200", c: "#ef4444" },
-        { label: "201–300", c: "#a855f7" },
-      ].map((it) => (
-        <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: 999,
-              background: it.c,
-              display: "inline-block",
-              boxShadow: "0 0 0 2px rgba(255,255,255,0.85)",
-            }}
-          />
-          <span style={{ fontSize: 11, opacity: 0.8 }}>{it.label}</span>
-        </div>
-      ))}
-    </div>
-  );
+  // 🔳 Polígono inverso (mask con hole)
+  const inverseMaskPositions = useMemo(() => {
+    if (!maskRings.length) return null;
+
+    // “world ring” enorme (outer)
+    const world: LatLngExpression[] = [
+      [85, -180],
+      [85, 180],
+      [-85, 180],
+      [-85, -180],
+    ];
+
+    // Leaflet Polygon soporta holes: [outer, hole1, hole2...]
+    // si hay multipolígonos, agregamos varios holes (uno por ring)
+    const holes = maskRings;
+
+    return [world, ...holes] as any;
+  }, [maskRings]);
 
   return (
     <div style={{ height: "100%", width: "100%", position: "relative" }}>
-      {/* HUD glass */}
+      {/* HUD minimal “Apple Weather” */}
       <div
         style={{
           position: "absolute",
           zIndex: 1000,
           top: 12,
           right: 12,
-          width: 380,
+          width: 340,
           maxWidth: "calc(100% - 24px)",
-          background: "rgba(255,255,255,0.82)",
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          border: "1px solid rgba(0,0,0,0.08)",
-          borderRadius: 14,
+          background: "rgba(255,255,255,0.80)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          border: "1px solid rgba(0,0,0,0.06)",
+          borderRadius: 16,
           padding: "12px 12px",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.10)",
           fontSize: 12,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+          <div>
             <div style={{ fontWeight: 800, letterSpacing: 0.2 }}>Aire AMBA</div>
-            <div style={{ opacity: 0.7, fontSize: 11 }}>Heatmap por muestreo geográfico (WAQI)</div>
+            <div style={{ opacity: 0.70, fontSize: 11 }}>WAQI · estimación por muestreo</div>
           </div>
 
-          <button
-            onClick={() => setRefreshKey((x) => x + 1)}
-            disabled={loading}
-            style={{
-              border: "1px solid rgba(0,0,0,0.12)",
-              background: "rgba(255,255,255,0.8)",
-              borderRadius: 10,
-              padding: "8px 10px",
-              fontSize: 12,
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
-            title="Recargar datos"
-          >
-            {loading ? "Cargando…" : "Recargar"}
-          </button>
-        </div>
-
-        {legend}
-
-        <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {/* Chip promedio */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 10px",
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.75)",
-              border: "1px solid rgba(0,0,0,0.06)",
-              flex: "1 1 160px",
-            }}
-          >
+          {avgAqi != null && (
             <div
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: 12,
-                background: summary ? aqiColor(summary.avg) : "rgba(0,0,0,0.08)",
-                boxShadow: "inset 0 0 0 2px rgba(255,255,255,0.75)",
-              }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-              <div style={{ fontWeight: 700, fontSize: 12 }}>Promedio estimado</div>
-              <div style={{ opacity: 0.75, fontSize: 11 }}>
-                {summary ? `AQI ${summary.avg} · ${aqiLabel(summary.avg)}` : "—"}
-              </div>
-            </div>
-          </div>
-
-          {/* Chip peor */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 10px",
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.75)",
-              border: "1px solid rgba(0,0,0,0.06)",
-              flex: "1 1 160px",
-            }}
-          >
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 12,
-                background: summary ? aqiColor(summary.max) : "rgba(0,0,0,0.08)",
-                boxShadow: "inset 0 0 0 2px rgba(255,255,255,0.75)",
-              }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-              <div style={{ fontWeight: 700, fontSize: 12 }}>Peor punto</div>
-              <div style={{ opacity: 0.75, fontSize: 11 }}>
-                {summary ? `AQI ${summary.max} · ${aqiLabel(summary.max)}` : "—"}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {loading ? (
-          <div style={{ marginTop: 10, opacity: 0.85 }}>
-            Cargando puntos… {progress.done}/{progress.total}
-            <div
-              style={{
-                height: 6,
-                marginTop: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 10px",
                 borderRadius: 999,
-                background: "rgba(0,0,0,0.08)",
-                overflow: "hidden",
+                background: "rgba(255,255,255,0.75)",
+                border: "1px solid rgba(0,0,0,0.06)",
               }}
+              title="Promedio estimado"
             >
-              <div
+              <span
                 style={{
-                  height: "100%",
-                  width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%`,
+                  width: 10,
+                  height: 10,
                   borderRadius: 999,
-                  background: "rgba(0,0,0,0.35)",
-                  transition: "width 200ms linear",
+                  background: aqiColor(avgAqi),
+                  display: "inline-block",
+                  boxShadow: "0 0 0 2px rgba(255,255,255,0.85)",
                 }}
               />
+              <span style={{ fontWeight: 700 }}>AQI {avgAqi}</span>
             </div>
-          </div>
-        ) : err ? (
-          <div style={{ color: "#c0392b", marginTop: 10 }}>{err}</div>
-        ) : (
-          <div style={{ marginTop: 10, opacity: 0.85 }}>
-            {filteredPoints.length} puntos · {lastUpdate ? `Actualizado ${formatTime(lastUpdate)}` : ""}
-          </div>
-        )}
+          )}
+        </div>
 
-        <div style={{ opacity: 0.6, marginTop: 6, fontSize: 11 }}>
-          Nota: esto es una visualización estimada (no medición oficial por barrio).
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 10 }}>
+          {loading ? (
+            <div style={{ opacity: 0.85 }}>
+              Cargando… {progress.done}/{progress.total}
+            </div>
+          ) : err ? (
+            <div style={{ color: "#c0392b" }}>{err}</div>
+          ) : (
+            <div style={{ opacity: 0.85 }}>
+              {filteredPoints.length} puntos ·{" "}
+              {lastUpdate ? lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+            </div>
+          )}
+
+          <div style={{ opacity: 0.60, fontSize: 11 }}>
+            {avgAqi != null ? aqiLabel(avgAqi) : ""}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10, opacity: 0.60, fontSize: 11 }}>
+          Mask: {maskRings.length ? "AMBA clip (GeoJSON)" : "sin GeoJSON (mostrando todo)"}
         </div>
       </div>
 
@@ -320,25 +302,38 @@ export function MapView() {
         style={{ height: "100%", width: "100%" }}
         scrollWheelZoom
       >
+        {/* Base map “Apple-ish” */}
         <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
 
-        {/* 🔥 Heatmap (más premium: menos derrame, más presencia) */}
+        {/* 🔥 Heatmap suave */}
         <HeatLayer
           points={filteredPoints.map((p) => ({
             lat: p.lat,
             lon: p.lon,
             aqi: p.aqi as number,
           }))}
-          radius={44}
-          blur={26}
-          minOpacity={0.28}
+          radius={42}
+          blur={30}
+          minOpacity={0.18}
           maxZoom={13}
         />
 
-        {/* 🔎 Puntos: estilo “pro” (borde blanco para legibilidad) */}
+        {/* Mask inverso (hole) → “clip” visual */}
+        {inverseMaskPositions && (
+          <Polygon
+            positions={inverseMaskPositions}
+            pathOptions={{
+              stroke: false,
+              fillColor: "#ffffff",
+              fillOpacity: 0.55, // Apple-style “fog” fuera del área
+            }}
+          />
+        )}
+
+        {/* Puntos muy sutiles (borde blanco) */}
         {filteredPoints.map((p, idx) => {
           const aqi = p.aqi as number;
           const color = aqiColor(aqi);
@@ -347,37 +342,34 @@ export function MapView() {
             <CircleMarker
               key={`pt-${p.lat},${p.lon},${idx}`}
               center={[p.lat, p.lon]}
-              radius={4.5}
+              radius={4}
               pathOptions={{
-                color: "rgba(255,255,255,0.9)",
+                color: "rgba(255,255,255,0.95)",
                 weight: 2,
-                opacity: 0.9,
+                opacity: 0.85,
                 fillColor: color,
-                fillOpacity: 0.95,
+                fillOpacity: 0.85,
               }}
             >
               <Popup>
                 <div style={{ minWidth: 230 }}>
                   <div style={{ fontWeight: 800, fontSize: 13 }}>{p.name ?? "Punto AMBA"}</div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-                    <div
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                    <span
                       style={{
-                        width: 12,
-                        height: 12,
+                        width: 10,
+                        height: 10,
                         borderRadius: 999,
                         background: color,
+                        display: "inline-block",
                         boxShadow: "0 0 0 2px rgba(255,255,255,0.85)",
                       }}
                     />
                     <div>
-                      <div style={{ fontSize: 12 }}>
-                        AQI: <b>{aqi}</b>
-                      </div>
+                      AQI: <b>{aqi}</b>
                       <div style={{ opacity: 0.75, fontSize: 11 }}>{aqiLabel(aqi)}</div>
                     </div>
                   </div>
-
                   <div style={{ opacity: 0.7, fontSize: 11, marginTop: 8 }}>
                     ({p.lat.toFixed(4)}, {p.lon.toFixed(4)})
                   </div>
