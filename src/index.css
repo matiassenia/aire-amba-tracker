@@ -2,13 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-Aire AMBA - Apple Weather Edition - Dark Theme First
-All colors MUST be HSL.
-*/
+/* Aire AMBA - Apple Weather Edition - Dark Theme First
+   All colors MUST be HSL. */
 
 @layer base {
-  /* Force dark mode as default for immersive experience */
   :root {
     --background: 230 25% 8%;
     --foreground: 210 40% 98%;
@@ -40,7 +37,7 @@ All colors MUST be HSL.
 
     --radius: 0.75rem;
 
-    /* AQI Colors as CSS variables (for dynamic use) */
+    /* AQI Colors */
     --aqi-good: 142 71% 58%;
     --aqi-moderate: 43 96% 56%;
     --aqi-sensitive: 27 96% 61%;
@@ -105,154 +102,167 @@ All colors MUST be HSL.
 
   html {
     @apply antialiased;
+    height: 100%;
   }
 
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+
+  /* iOS-like smoothness + prevent weird double-tap zoom */
+  button, a {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
 @layer components {
-  /* Glassmorphism utility classes */
+  /* Premium background */
+  .app-surface {
+    background:
+      radial-gradient(1200px 800px at 20% 10%, hsla(210, 80%, 60%, 0.12), transparent 60%),
+      radial-gradient(900px 600px at 80% 20%, hsla(142, 80%, 55%, 0.10), transparent 55%),
+      radial-gradient(800px 600px at 60% 90%, hsla(270, 80%, 65%, 0.10), transparent 55%),
+      hsl(var(--background));
+  }
+
+  /* Glass cards */
   .glass-card {
     @apply backdrop-blur-xl bg-black/40 border border-white/10 shadow-lg shadow-black/20;
   }
-
   .glass-card-light {
     @apply backdrop-blur-xl bg-white/10 border border-white/20 shadow-lg shadow-black/10;
   }
 
-  /* Custom scrollbar for dark theme */
+  /* Map module shell (THIS solves your "map takes whole screen" issue) */
+  .map-shell {
+    @apply relative overflow-hidden rounded-2xl border border-white/10 shadow-xl shadow-black/30;
+    background: linear-gradient(
+      180deg,
+      hsla(230, 25%, 14%, 0.92),
+      hsla(230, 25%, 10%, 0.92)
+    );
+    transition: height 250ms ease, width 250ms ease, transform 250ms ease;
+  }
+
+  /* Optional subtle inner stroke like iOS cards */
+  .map-shell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 1rem;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+
+  /* Custom scrollbar */
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
   }
-
   .custom-scrollbar::-webkit-scrollbar-track {
     background: transparent;
   }
-
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
   }
-
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.28);
   }
 
-  /* Zone tooltip styling */
+  /* Zone tooltip */
   .zone-tooltip {
     @apply !bg-black/80 !backdrop-blur-md !border !border-white/10 !rounded-lg !px-3 !py-2 !text-white !shadow-lg;
   }
-
   .zone-tooltip::before {
     @apply !border-t-black/80;
   }
 }
 
 @layer utilities {
-  /* Safe area padding for mobile */
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
 
-  .pt-safe {
-    padding-top: env(safe-area-inset-top, 0px);
-  }
+  .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+  .animate-slide-in-right { animation: slide-in-right 0.3s ease-out forwards; }
+  .animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+  .animate-float { animation: float 3s ease-in-out infinite; }
 
-  /* Fade in animation */
-  .animate-fade-in {
-    animation: fade-in 0.3s ease-out forwards;
-  }
-
-  /* Slide in from right animation */
-  .animate-slide-in-right {
-    animation: slide-in-right 0.3s ease-out forwards;
-  }
-
-  /* Pulse soft animation */
-  .animate-pulse-soft {
-    animation: pulse-soft 2s ease-in-out infinite;
-  }
-
-  /* Float animation */
-  .animate-float {
-    animation: float 3s ease-in-out infinite;
+  /* Use this on your map wrapper to guarantee centering in flex/grid layouts */
+  .centered-module {
+    @apply flex items-center justify-center;
   }
 }
 
 /* Animation keyframes */
 @keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes slide-in-right {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
-
 @keyframes pulse-soft {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.7; }
 }
-
 @keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
 }
 
-/* Leaflet overrides for dark theme */
+/* ----------------------------
+   Leaflet overrides (CRITICAL)
+   ---------------------------- */
+
+/* ✅ Never let Leaflet decide fullscreen sizes */
 .leaflet-container {
+  width: 100% !important;
+  height: 100% !important; /* ← Key: it must follow the parent map-shell */
   background: hsl(var(--background)) !important;
   font-family: inherit;
 }
 
-.leaflet-popup-content-wrapper {
-  @apply !bg-black/80 !backdrop-blur-md !border !border-white/10 !rounded-xl !text-white !shadow-lg;
+/* ✅ Prevent zoom-animated layers from bleeding outside the module */
+.map-shell .leaflet-container,
+.map-shell .leaflet-pane,
+.map-shell .leaflet-map-pane,
+.map-shell .leaflet-tile-pane,
+.map-shell .leaflet-overlay-pane,
+.map-shell canvas,
+.map-shell img {
+  max-width: none !important;
 }
 
+/* Popups */
+.leaflet-popup-content-wrapper {
+  @apply !bg-black/75 !backdrop-blur-md !border !border-white/10 !rounded-2xl !text-white !shadow-xl;
+}
 .leaflet-popup-content {
   @apply !m-3;
 }
-
 .leaflet-popup-tip {
-  @apply !bg-black/80;
+  @apply !bg-black/75;
 }
 
+/* Controls */
 .leaflet-control-zoom {
   @apply !border-0 !shadow-lg;
 }
-
 .leaflet-control-zoom a {
-  @apply !bg-black/60 !backdrop-blur-md !text-white !border !border-white/10 hover:!bg-black/80;
+  @apply !bg-black/55 !backdrop-blur-md !text-white !border !border-white/10 hover:!bg-black/75;
 }
-
 .leaflet-control-attribution {
-  @apply !bg-black/40 !backdrop-blur-sm !text-white/40 !text-xs;
+  @apply !bg-black/35 !backdrop-blur-sm !text-white/40 !text-xs;
 }
-
 .leaflet-control-attribution a {
   @apply !text-white/60;
+}
+
+/* Optional: smoother tile rendering in dark scheme */
+.leaflet-tile {
+  filter: saturate(0.95) contrast(0.98) brightness(0.95);
 }

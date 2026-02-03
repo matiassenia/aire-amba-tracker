@@ -1,16 +1,14 @@
-// AireAmbaMap - Main orchestrator component for the map visualization
-import React, { Suspense, useState, useCallback } from 'react';
-import { AQISummaryCard } from '@/components/cards/AQISummaryCard';
-import { ZoneDetailCard } from '@/components/cards/ZoneDetailCard';
-import { BottomBar } from '@/components/layout/BottomBar';
-import { StaticMapFallback } from '@/components/map/StaticMapFallback';
-import { useAirQualityData } from '@/hooks/useAirQualityData';
-import type { Zone, Scope } from '@/types/airQuality';
-import { cn } from '@/lib/utils';
+// AireAmbaMap - Map module (presentational)
+import React, { Suspense } from "react";
+import { AQISummaryCard } from "@/components/cards/AQISummaryCard";
+import { BottomBar } from "@/components/layout/BottomBar";
+import { StaticMapFallback } from "@/components/map/StaticMapFallback";
+import type { Zone, Scope, Station } from "@/types/airQuality";
+import { cn } from "@/lib/utils";
 
-// Lazy load Leaflet map to avoid SSR issues
-const LeafletMap = React.lazy(() => 
-  import('@/components/map/LeafletMap').then(mod => ({ default: mod.LeafletMap }))
+// Lazy load Leaflet map
+const LeafletMap = React.lazy(() =>
+  import("@/components/map/LeafletMap").then((mod) => ({ default: mod.LeafletMap }))
 );
 
 // Error boundary for map
@@ -28,18 +26,15 @@ class MapErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('Map Error:', error, info);
+    console.error("Map Error:", error, info);
   }
 
   render() {
-    if (this.state.hasError) {
-      return this.props.fallback;
-    }
+    if (this.state.hasError) return this.props.fallback;
     return this.props.children;
   }
 }
 
-// Loading state for map
 function MapLoadingState() {
   return (
     <div className="h-full w-full bg-[#1a1a2e] flex items-center justify-center">
@@ -51,44 +46,51 @@ function MapLoadingState() {
   );
 }
 
-export function AireAmbaMap() {
-  const [scope, setScope] = useState<Scope>('amba');
-  const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
+type AireAmbaMapProps = {
+  className?: string;
 
-  const { 
-    stations, 
-    zones, 
-    averageAqi, 
-    lastUpdated, 
-    isUsingMockData, 
-    isLoading 
-  } = useAirQualityData(scope);
+  scope: Scope;
+  onScopeChange: (s: Scope) => void;
 
-  const handleZoneClick = useCallback((zone: Zone) => {
-    setSelectedZone(prev => prev?.id === zone.id ? null : zone);
-  }, []);
+  stations: Station[];
+  zones: Zone[];
 
-  const handleCloseDetail = useCallback(() => {
-    setSelectedZone(null);
-  }, []);
+  averageAqi: number;
+  lastUpdated?: string | null;
+  isUsingMockData?: boolean;
+  isLoading?: boolean;
 
-  const handleScopeChange = useCallback((newScope: Scope) => {
-    setScope(newScope);
-    setSelectedZone(null);
-  }, []);
+  selectedZoneId: string | null;
+  onZoneClick: (z: Zone) => void;
+};
 
+export function AireAmbaMap({
+  className,
+  scope,
+  onScopeChange,
+  stations,
+  zones,
+  averageAqi,
+  lastUpdated = null,
+  isUsingMockData = false,
+  isLoading = false,
+  selectedZoneId,
+  onZoneClick,
+}: AireAmbaMapProps) {
   const fallbackMap = (
-    <StaticMapFallback
-      zones={zones}
-      onZoneClick={handleZoneClick}
-      selectedZoneId={selectedZone?.id}
-    />
+    <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />
   );
 
   return (
-    <div className="relative h-full w-full bg-background overflow-hidden">
+    <div
+      className={cn(
+        "relative isolate h-full w-full overflow-hidden rounded-3xl bg-background",
+        "shadow-[0_12px_30px_rgba(0,0,0,0.25)] border border-white/10",
+        className
+      )}
+    >
       {/* Map Layer */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 z-0">
         <MapErrorBoundary fallback={fallbackMap}>
           <Suspense fallback={<MapLoadingState />}>
             <LeafletMap
@@ -96,19 +98,15 @@ export function AireAmbaMap() {
               zones={zones}
               scope={scope}
               averageAqi={averageAqi}
-              selectedZoneId={selectedZone?.id}
-              onZoneClick={handleZoneClick}
+              selectedZoneId={selectedZoneId}
+              onZoneClick={onZoneClick}
             />
           </Suspense>
         </MapErrorBoundary>
       </div>
 
-      {/* UI Overlay - AQI Summary (top-left) */}
-      <div className={cn(
-        'absolute top-4 left-4 z-30',
-        'transition-opacity duration-300',
-        selectedZone && 'opacity-70'
-      )}>
+      {/* AQI Summary (mini overlay) */}
+      <div className={cn("absolute top-4 left-4 z-20 transition-opacity duration-300", selectedZoneId && "opacity-70")}>
         <AQISummaryCard
           averageAqi={averageAqi}
           lastUpdated={lastUpdated}
@@ -117,18 +115,10 @@ export function AireAmbaMap() {
         />
       </div>
 
-      {/* Zone Detail Panel (slide from right) */}
-      <ZoneDetailCard
-        zone={selectedZone}
-        stations={stations}
-        onClose={handleCloseDetail}
-      />
-
-      {/* Bottom Bar */}
-      <BottomBar
-        scope={scope}
-        onScopeChange={handleScopeChange}
-      />
+      {/* Bottom bar dentro del módulo */}
+      <div className="absolute inset-x-0 bottom-0 z-20">
+        <BottomBar scope={scope} onScopeChange={onScopeChange} />
+      </div>
     </div>
   );
 }
