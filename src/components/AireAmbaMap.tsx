@@ -1,5 +1,6 @@
 // AireAmbaMap - Map module (presentational)
 import React, { Suspense } from "react";
+import { AirQualityBottomSheet } from "@/components/layout/AirQualityBottomSheet";
 import { AQISummaryCard } from "@/components/cards/AQISummaryCard";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { StaticMapFallback } from "@/components/map/StaticMapFallback";
@@ -37,13 +38,24 @@ class MapErrorBoundary extends React.Component<
 
 function MapLoadingState() {
   return (
-    <div className="h-full w-full bg-[#1a1a2e] flex items-center justify-center">
+    <div className="flex h-full w-full items-center justify-center bg-[#1a1a2e]">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-        <span className="text-white/40 text-sm">Cargando mapa...</span>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+        <span className="text-sm text-white/40">Cargando mapa...</span>
       </div>
     </div>
   );
+}
+
+// Helpers to avoid assuming the exact Zone shape
+function getZoneId(z: Zone): string | undefined {
+  // @ts-expect-error - tolerant mapping for unknown Zone shapes
+  return z.id ?? z.zoneId ?? z?.properties?.id;
+}
+
+function getZoneName(z: Zone): string | undefined {
+  // @ts-expect-error - tolerant mapping for unknown Zone shapes
+  return z.name ?? z.zoneName ?? z?.properties?.name;
 }
 
 type AireAmbaMapProps = {
@@ -78,14 +90,35 @@ export function AireAmbaMap({
   onZoneClick,
 }: AireAmbaMapProps) {
   const fallbackMap = (
-    <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />
+    <StaticMapFallback
+      zones={zones}
+      onZoneClick={onZoneClick}
+      selectedZoneId={selectedZoneId ?? undefined}
+    />
   );
+
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+
+  const selectedZone = React.useMemo(() => {
+    if (!selectedZoneId) return null;
+    return zones.find((z) => getZoneId(z) === selectedZoneId) ?? null;
+  }, [selectedZoneId, zones]);
+
+  const selectedZoneName = React.useMemo(() => {
+    if (!selectedZone) return null;
+    return getZoneName(selectedZone) ?? selectedZoneId ?? null;
+  }, [selectedZone, selectedZoneId]);
+
+  // Open bottom sheet when a zone is selected
+  React.useEffect(() => {
+    if (selectedZoneId) setSheetOpen(true);
+  }, [selectedZoneId]);
 
   return (
     <div
       className={cn(
         "relative isolate h-full w-full overflow-hidden rounded-3xl bg-background",
-        "shadow-[0_12px_30px_rgba(0,0,0,0.25)] border border-white/10",
+        "border border-white/10 shadow-[0_12px_30px_rgba(0,0,0,0.25)]",
         className
       )}
     >
@@ -105,20 +138,44 @@ export function AireAmbaMap({
         </MapErrorBoundary>
       </div>
 
-      {/* AQI Summary (mini overlay) */}
-      <div className={cn("absolute top-4 left-4 z-20 transition-opacity duration-300", selectedZoneId && "opacity-70")}>
-        <AQISummaryCard
-          averageAqi={averageAqi}
-          lastUpdated={lastUpdated}
-          isUsingMockData={isUsingMockData}
-          isLoading={isLoading}
-        />
-      </div>
-
       {/* Bottom bar dentro del módulo */}
       <div className="absolute inset-x-0 bottom-0 z-20">
         <BottomBar scope={scope} onScopeChange={onScopeChange} />
       </div>
+
+      {/* Bottom Sheet: Zone details + General status (collapsible) */}
+      <AirQualityBottomSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        zoneTitle={selectedZoneName}
+        zoneDetail={
+          selectedZone ? (
+            // Placeholder: luego conectamos ZoneDetailCard real con snapshot (REAL/ESTIMATED, confidence, estaciones cercanas).
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="text-sm text-white/70">
+                Zona seleccionada:{" "}
+                <span className="font-medium text-white">{selectedZoneName}</span>
+              </div>
+              <div className="mt-2 text-xs text-white/40">
+                Próximo paso: conectar ZoneDetailCard con snapshot (REAL/ESTIMATED, confidence, estaciones cercanas).
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/60">
+              Tocá una zona para ver el detalle.
+            </div>
+          )
+        }
+        generalDetail={
+          <AQISummaryCard
+            averageAqi={averageAqi}
+            lastUpdated={lastUpdated}
+            isUsingMockData={isUsingMockData}
+            isLoading={isLoading}
+          />
+        }
+        defaultGeneralOpen={false}
+      />
     </div>
   );
 }
