@@ -1,53 +1,43 @@
-// src/lib/geo/geojson.ts
-import type { LatLngExpression } from "leaflet";
+export function haversineDistanceKm(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number }
+) {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
 
-export type ZoneProps = {
-  id?: string | number;
-  name?: string;
-  type?: string;
-  [k: string]: any;
-};
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLon = Math.sin(dLon / 2);
 
-export type ZoneFeature = {
-  type: "Feature";
-  properties: ZoneProps;
-  geometry: {
-    type: "Polygon" | "MultiPolygon";
-    coordinates: any;
-  };
-};
+  const h =
+    sinDLat * sinDLat +
+    Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
 
-export type ZoneFC = {
-  type: "FeatureCollection";
-  features: ZoneFeature[];
-};
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
 
-// Convierte Polygon/MultiPolygon GeoJSON -> array de "positions" compatibles con react-leaflet Polygon
-// - Polygon => LatLngExpression[][]
-// - MultiPolygon => LatLngExpression[][][]
-export function toLeafletPositions(
-  geom: ZoneFeature["geometry"]
-): LatLngExpression[][] | LatLngExpression[][][] {
-  if (geom.type === "Polygon") {
-    // coordinates: [ outerRing, hole1, hole2... ], ring = [ [lon,lat], ... ]
-    return geom.coordinates.map((ring: [number, number][]) =>
-      ring.map(([lon, lat]) => [lat, lon] as LatLngExpression)
-    );
+/**
+ * Ray-casting point-in-polygon
+ * polygon: Array<[lat, lon]>
+ */
+export function pointInPolygon(
+  point: { lat: number; lon: number },
+  polygon: Array<[number, number]>
+) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][1]; // lon
+    const yi = polygon[i][0]; // lat
+    const xj = polygon[j][1];
+    const yj = polygon[j][0];
+
+    const intersect =
+      yi > point.lat !== yj > point.lat &&
+      point.lon < ((xj - xi) * (point.lat - yi)) / (yj - yi) + xi;
+
+    if (intersect) inside = !inside;
   }
-
-  // MultiPolygon: [ polygon1, polygon2, ... ], each polygon = [ outer, holes... ]
-  return geom.coordinates.map((polygon: [number, number][][]) =>
-    polygon.map((ring: [number, number][]) =>
-      ring.map(([lon, lat]) => [lat, lon] as LatLngExpression)
-    )
-  );
-}
-
-// Id estable para React keys / selección
-export function getZoneId(f: ZoneFeature, idx: number) {
-  return String(f.properties?.id ?? f.properties?.ID ?? f.properties?.codigo ?? f.properties?.code ?? idx);
-}
-
-export function getZoneName(f: ZoneFeature, idx: number) {
-  return String(f.properties?.name ?? f.properties?.nombre ?? f.properties?.NOMBRE ?? `Zona ${idx + 1}`);
+  return inside;
 }

@@ -1,148 +1,110 @@
-// AQI Utilities - Apple Weather inspired colors and contextual messages
+import type {
+  Station,
+  Zone,
+  ZoneAqiSnapshot,
+  NearestStationInfo,
+  ConfidenceLevel,
+  DataSourceType,
+} from "@/types/airQuality";
 
-import type { AQILevel } from '@/types/airQuality';
+import { haversineDistanceKm, pointInPolygon } from "@/lib/geo/geojson";
+import { idwEstimate, type Sample } from "@/lib/idw";
 
-/**
- * Apple Weather-inspired soft color palette for AQI ranges
- */
-export function getAqiColor(aqi: number): string {
-  if (aqi <= 50) return '#4ADE80';      // soft green
-  if (aqi <= 100) return '#FBBF24';     // warm amber
-  if (aqi <= 150) return '#FB923C';     // soft orange
-  if (aqi <= 200) return '#F87171';     // muted red
-  if (aqi <= 300) return '#A78BFA';     // soft purple
-  return '#7F1D1D';                      // dark maroon
+function confidenceFromDistanceKm(d: number): ConfidenceLevel {
+  if (d <= 5) return "high";
+  if (d <= 12) return "medium";
+  return "low";
 }
 
-/**
- * Returns AQI color with alpha for overlays
- */
-export function getAqiColorWithAlpha(aqi: number, alpha: number = 0.6): string {
-  const hex = getAqiColor(aqi);
-  // Convert hex to rgba
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
+export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnapshot {
+  const center = zone.centroid;
 
-/**
- * Spanish labels for AQI levels
- */
-export function getAqiLabel(aqi: number): string {
-  if (aqi <= 50) return 'Bueno';
-  if (aqi <= 100) return 'Moderado';
-  if (aqi <= 150) return 'Dañino para sensibles';
-  if (aqi <= 200) return 'Dañino';
-  if (aqi <= 300) return 'Muy dañino';
-  return 'Peligroso';
-}
+  // 1) estaciones con distancia
+  const stationsByDistance: NearestStationInfo[] = stations
+    .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon) && Number.isFinite(s.aqi))
+    .map((s) => ({
+      uid: s.uid,
+      name: s.name,
+      lat: s.lat,
+      lon: s.lon,
+      aqi: s.aqi,
+      distanceKm: haversineDistanceKm(center, { lat: s.lat, lon: s.lon }),
+    }))
+    .sort((a, b) => a.distanceKm - b.distanceKm);
 
-/**
- * Get AQI level enum
- */
-export function getAqiLevel(aqi: number): AQILevel {
-  if (aqi <= 50) return 'good';
-  if (aqi <= 100) return 'moderate';
-  if (aqi <= 150) return 'unhealthy-sensitive';
-  if (aqi <= 200) return 'unhealthy';
-  if (aqi <= 300) return 'very-unhealthy';
-  return 'hazardous';
-}
+  const nearestStations = stationsByDistance.slice(0, 3);
 
-/**
- * Contextual health messages in Spanish - Apple Weather style
- */
-export function getContextualMessage(aqi: number): { message: string; emoji: string } {
-  if (aqi <= 50) {
-    const messages = [
-      { message: 'Excelente día para actividades al aire libre', emoji: '🌱' },
-      { message: 'El aire está limpio, disfruta el exterior', emoji: '☀️' },
-      { message: 'Perfecto para caminar o hacer ejercicio', emoji: '🚶' },
-    ];
-    return messages[Math.floor(Math.random() * messages.length)];
+  // 2) detectar estación dentro del polígono
+  const stationsInside = stations.filter((s) =>
+    zone.polygon?.length ? pointInPolygon({ lat: s.lat, lon: s.lon }, zone.polygon) : false
+  );
+
+  const source: DataSourceType = stationsInside.length > 0 ? "REAL" : "ESTIMATED";
+
+  // 3) AQI final
+  let aqi = 0;
+
+  if (source === "REAL") {
+    // elegimos la más cercana al centro (pero dentro de la zona)
+    const insideSorted = stationsInside
+      .map((s) => ({
+        station: s,
+        d: haversineDistanceKm(center, { lat: s.lat, lon: s.lon }),
+      }))
+      .sort((a, b) => a.d - b.d);
+
+    aqi = Math.round(insideSorted[0]?.station.aqi ?? 0);
+
+    const confidence: ConfidenceLevel = "high";
+
+    return {
+      zoneId: zone.id,
+      zoneName: zone.name,
+      aqi,
+      source,
+      confidence,
+      nearestStations,
+      dominentpol: insideSorted[0]?.station.dominentpol,
+      lastUpdated: insideSorted[0]?.station.time ?? null,
+    };
   }
-  
-  if (aqi <= 100) {
-    const messages = [
-      { message: 'Buen día para salir, modera el ejercicio intenso', emoji: '👍' },
-      { message: 'Calidad aceptable para la mayoría', emoji: '🌤️' },
-      { message: 'Disfruta el día, evita esfuerzos prolongados', emoji: '🚴' },
-    ];
-    return messages[Math.floor(Math.random() * messages.length)];
-  }
-  
-  if (aqi <= 150) {
-    const messages = [
-      { message: 'Grupos sensibles deben limitar actividades', emoji: '⚠️' },
-      { message: 'Considera reducir tiempo al aire libre', emoji: '🏃' },
-      { message: 'Niños y adultos mayores: precaución', emoji: '👶' },
-    ];
-    return messages[Math.floor(Math.random() * messages.length)];
-  }
-  
-  if (aqi <= 200) {
-    const messages = [
-      { message: 'Evita actividades prolongadas afuera', emoji: '🏠' },
-      { message: 'Mejor quedarse en interiores', emoji: '🚪' },
-      { message: 'Limita la exposición al aire libre', emoji: '😷' },
-    ];
-    return messages[Math.floor(Math.random() * messages.length)];
-  }
-  
-  const messages = [
-    { message: 'Permanece en interiores', emoji: '🚨' },
-    { message: 'Calidad del aire peligrosa', emoji: '⛔' },
-    { message: 'Evita cualquier actividad al aire libre', emoji: '🏥' },
-  ];
-  return messages[Math.floor(Math.random() * messages.length)];
-}
 
-/**
- * Get confidence level based on distance to nearest stations
- */
-export function getConfidenceLevel(
-  nearestStationDistance: number
-): 'high' | 'medium' | 'low' {
-  if (nearestStationDistance < 3) return 'high';
-  if (nearestStationDistance < 8) return 'medium';
-  return 'low';
-}
+  // ESTIMATED: armamos samples para IDW (value = aqi)
+  const samples: Sample[] = stations
+    .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon) && Number.isFinite(s.aqi))
+    .map((s) => ({ lat: s.lat, lon: s.lon, value: s.aqi }));
 
-/**
- * Get confidence label in Spanish
- */
-export function getConfidenceLabel(confidence: 'high' | 'medium' | 'low'): string {
-  switch (confidence) {
-    case 'high': return 'Alta precisión';
-    case 'medium': return 'Precisión media';
-    case 'low': return 'Estimación aproximada';
-  }
-}
+  const estimated = idwEstimate(center, samples, {
+    k: 8,
+    maxDistKm: 40,
+    minPoints: 3,
+    power: 2,
+  });
 
-/**
- * Format pollutant name for display
- */
-export function formatPollutant(pol: string): string {
-  const names: Record<string, string> = {
-    pm25: 'PM2.5',
-    pm10: 'PM10',
-    o3: 'Ozono',
-    no2: 'NO₂',
-    co: 'CO',
-    so2: 'SO₂',
+  // ✅ Fallback: si IDW devuelve null, usamos promedio de las 3 más cercanas
+  const fallbackAvg = (() => {
+    const nearest = stationsByDistance.slice(0, 3); // podés subir a 5 si querés
+    if (nearest.length === 0) return null;
+    const sum = nearest.reduce((acc, s) => acc + s.aqi, 0);
+    return sum / nearest.length;
+  })();
+
+  const finalEstimated = estimated ?? fallbackAvg;
+
+  aqi = Math.round(finalEstimated ?? 0);
+
+  // Confianza: si IDW falló -> low; si no, depende de distancia al vecino más cercano
+  const d0 = nearestStations[0]?.distanceKm ?? 999;
+  const confidence: ConfidenceLevel = estimated === null ? "low" : confidenceFromDistanceKm(d0);
+
+  return {
+    zoneId: zone.id,
+    zoneName: zone.name,
+    aqi,
+    source,
+    confidence,
+    nearestStations,
+    dominentpol: undefined,
+    lastUpdated: null,
   };
-  return names[pol] || pol.toUpperCase();
 }
-
-/**
- * AQI Legend data for the bottom bar
- */
-export const AQI_LEGEND = [
-  { range: '0-50', label: 'Bueno', color: '#4ADE80' },
-  { range: '51-100', label: 'Moderado', color: '#FBBF24' },
-  { range: '101-150', label: 'Sensibles', color: '#FB923C' },
-  { range: '151-200', label: 'Dañino', color: '#F87171' },
-  { range: '201-300', label: 'Muy dañino', color: '#A78BFA' },
-  { range: '300+', label: 'Peligroso', color: '#7F1D1D' },
-];

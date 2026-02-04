@@ -4,7 +4,7 @@ import { AirQualityBottomSheet } from "@/components/layout/AirQualityBottomSheet
 import { AQISummaryCard } from "@/components/cards/AQISummaryCard";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { StaticMapFallback } from "@/components/map/StaticMapFallback";
-import type { Zone, Scope, Station } from "@/types/airQuality";
+import type { Zone, Scope, Station, ZoneAqiSnapshot } from "@/types/airQuality";
 import { cn } from "@/lib/utils";
 
 // Lazy load Leaflet map
@@ -47,15 +47,10 @@ function MapLoadingState() {
   );
 }
 
-// Helpers to avoid assuming the exact Zone shape
-function getZoneId(z: Zone): string | undefined {
-  // @ts-expect-error - tolerant mapping for unknown Zone shapes
-  return z.id ?? z.zoneId ?? z?.properties?.id;
-}
-
-function getZoneName(z: Zone): string | undefined {
-  // @ts-expect-error - tolerant mapping for unknown Zone shapes
-  return z.name ?? z.zoneName ?? z?.properties?.name;
+function confidenceLabel(c: NonNullable<ZoneAqiSnapshot>["confidence"]) {
+  if (c === "high") return "Confianza alta";
+  if (c === "medium") return "Confianza media";
+  return "Confianza baja";
 }
 
 type AireAmbaMapProps = {
@@ -74,6 +69,8 @@ type AireAmbaMapProps = {
 
   selectedZoneId: string | null;
   onZoneClick: (z: Zone) => void;
+
+  selectedSnapshot?: ZoneAqiSnapshot | null;
 };
 
 export function AireAmbaMap({
@@ -88,6 +85,7 @@ export function AireAmbaMap({
   isLoading = false,
   selectedZoneId,
   onZoneClick,
+  selectedSnapshot = null,
 }: AireAmbaMapProps) {
   const fallbackMap = (
     <StaticMapFallback
@@ -101,13 +99,10 @@ export function AireAmbaMap({
 
   const selectedZone = React.useMemo(() => {
     if (!selectedZoneId) return null;
-    return zones.find((z) => getZoneId(z) === selectedZoneId) ?? null;
+    return zones.find((z) => z.id === selectedZoneId) ?? null;
   }, [selectedZoneId, zones]);
 
-  const selectedZoneName = React.useMemo(() => {
-    if (!selectedZone) return null;
-    return getZoneName(selectedZone) ?? selectedZoneId ?? null;
-  }, [selectedZone, selectedZoneId]);
+  const selectedZoneName = selectedZone?.name ?? null;
 
   // Open bottom sheet when a zone is selected
   React.useEffect(() => {
@@ -150,16 +145,50 @@ export function AireAmbaMap({
         zoneTitle={selectedZoneName}
         zoneDetail={
           selectedZone ? (
-            // Placeholder: luego conectamos ZoneDetailCard real con snapshot (REAL/ESTIMATED, confidence, estaciones cercanas).
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-              <div className="text-sm text-white/70">
-                Zona seleccionada:{" "}
-                <span className="font-medium text-white">{selectedZoneName}</span>
+            selectedSnapshot ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-base font-semibold text-white">
+                      {selectedSnapshot.zoneName}
+                    </div>
+                    <div className="mt-1 text-3xl font-bold text-white">
+                      AQI {selectedSnapshot.aqi}
+                    </div>
+                    <div className="mt-1 text-sm text-white/70">
+                      {selectedSnapshot.source === "REAL" ? "Real" : "Estimado"} ·{" "}
+                      {confidenceLabel(selectedSnapshot.confidence)}
+                    </div>
+                  </div>
+                </div>
+
+                {selectedSnapshot.source === "ESTIMATED" &&
+                  selectedSnapshot.nearestStations.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-xs text-white/50">
+                        Basado en estaciones cercanas
+                      </div>
+                      <ul className="mt-2 space-y-1">
+                        {selectedSnapshot.nearestStations.map((s) => (
+                          <li
+                            key={s.uid}
+                            className="flex items-center justify-between text-sm text-white/80"
+                          >
+                            <span className="truncate">{s.name}</span>
+                            <span className="text-white/50">
+                              {s.distanceKm.toFixed(1)} km
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
               </div>
-              <div className="mt-2 text-xs text-white/40">
-                Próximo paso: conectar ZoneDetailCard con snapshot (REAL/ESTIMATED, confidence, estaciones cercanas).
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/60">
+                No se pudo calcular el AQI para esta zona.
               </div>
-            </div>
+            )
           ) : (
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/60">
               Tocá una zona para ver el detalle.
