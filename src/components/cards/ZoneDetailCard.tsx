@@ -1,170 +1,159 @@
 // Zone Detail Card - Slide-in panel when zone is clicked
-import { useEffect, useState } from 'react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { 
-  getAqiColor, 
-  getAqiLabel, 
+import { useEffect, useState } from "react";
+import { GlassCard } from "@/components/ui/GlassCard";
+import {
+  getAqiColor,
+  getAqiLabel,
   getContextualMessage,
   getConfidenceLabel,
-  formatPollutant 
-} from '@/lib/aqiUtils';
-import type { Zone, Station } from '@/types/airQuality';
-import { cn } from '@/lib/utils';
-import { X, MapPin, Activity } from 'lucide-react';
+  formatPollutant,
+} from "@/lib/aqiUtils";
+import type { ZoneAqiSnapshot } from "@/types/airQuality";
+import { cn } from "@/lib/utils";
+import { X, MapPin, Activity } from "lucide-react";
 
 interface ZoneDetailCardProps {
-  zone: Zone | null;
-  stations: Station[];
+  snapshot: ZoneAqiSnapshot | null;
   onClose: () => void;
 }
 
-export function ZoneDetailCard({ zone, stations, onClose }: ZoneDetailCardProps) {
+export function ZoneDetailCard({ snapshot, onClose }: ZoneDetailCardProps) {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    if (zone) {
-      // Small delay to trigger animation
+    if (snapshot) {
       requestAnimationFrame(() => setIsVisible(true));
     } else {
       setIsVisible(false);
     }
-  }, [zone]);
+  }, [snapshot]);
 
-  if (!zone) return null;
+  if (!snapshot) return null;
 
-  const aqi = zone.estimatedAqi ?? 50;
+  const aqi = snapshot.aqi ?? 0;
   const aqiColor = getAqiColor(aqi);
   const aqiLabel = getAqiLabel(aqi);
   const contextual = getContextualMessage(aqi);
 
-  // Find nearest stations
-  const stationsWithDistance = stations.map(s => {
-    const dLat = (zone.centroid.lat - s.lat) * 111;
-    const dLon = (zone.centroid.lon - s.lon) * 111 * Math.cos(zone.centroid.lat * Math.PI / 180);
-    const distance = Math.sqrt(dLat * dLat + dLon * dLon);
-    return { ...s, distance };
-  }).sort((a, b) => a.distance - b.distance).slice(0, 3);
+  const dominantPol = snapshot.dominentpol;
+  const stations = snapshot.nearestStations ?? [];
 
-  // Get dominant pollutant from nearest station
-  const dominantPol = stationsWithDistance[0]?.dominentpol;
+  const sourceLabel = snapshot.source === "REAL" ? "Real" : "Estimado";
+  const precisionLabel = getConfidenceLabel(snapshot.confidence);
 
   return (
-    <div 
+    <div
       className={cn(
-        'fixed top-0 right-0 h-full w-80 z-50',
-        'transition-transform duration-300 ease-out',
-        isVisible ? 'translate-x-0' : 'translate-x-full'
+        "fixed right-0 top-0 z-50 h-full w-80",
+        "transition-transform duration-300 ease-out",
+        isVisible ? "translate-x-0" : "translate-x-full"
       )}
     >
-      <GlassCard className="h-full rounded-none rounded-l-2xl overflow-y-auto">
+      <GlassCard className="h-full overflow-y-auto rounded-none rounded-l-2xl">
         {/* Header */}
-        <div className="flex items-start justify-between mb-4">
+        <div className="mb-4 flex items-start justify-between">
           <div>
-            <h2 className="text-white text-lg font-semibold">{zone.name}</h2>
-            <span className="text-white/50 text-xs uppercase tracking-wide">
-              {zone.type === 'comuna' ? 'CABA' : 'Conurbano'}
+            <h2 className="text-lg font-semibold text-white">{snapshot.zoneName}</h2>
+
+            <span className="text-xs uppercase tracking-wide text-white/50">
+              {sourceLabel} · {precisionLabel}
             </span>
           </div>
+
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            className="rounded-full bg-white/10 p-1.5 transition-colors hover:bg-white/20"
+            aria-label="Cerrar"
           >
-            <X className="w-4 h-4 text-white/70" />
+            <X className="h-4 w-4 text-white/70" />
           </button>
         </div>
 
         {/* AQI Display */}
-        <div className="flex items-center gap-4 mb-4 p-4 rounded-xl bg-white/5">
+        <div className="mb-4 flex items-center gap-4 rounded-xl bg-white/5 p-4">
           <div
-            className="w-20 h-20 rounded-full flex items-center justify-center"
-            style={{ 
+            className="flex h-20 w-20 items-center justify-center rounded-full"
+            style={{
               background: `radial-gradient(circle, ${aqiColor}40 0%, transparent 70%)`,
-              boxShadow: `0 0 30px ${aqiColor}30`
+              boxShadow: `0 0 30px ${aqiColor}30`,
             }}
           >
-            <span 
-              className="text-3xl font-light tabular-nums"
-              style={{ color: aqiColor }}
-            >
+            <span className="tabular-nums text-3xl font-light" style={{ color: aqiColor }}>
               {aqi}
             </span>
           </div>
+
           <div className="flex-1">
-            <span 
-              className="text-lg font-medium block"
-              style={{ color: aqiColor }}
-            >
+            <span className="block text-lg font-medium" style={{ color: aqiColor }}>
               {aqiLabel}
             </span>
-            <span className="text-white/40 text-sm">
-              Índice de Calidad del Aire
-            </span>
+            <span className="text-sm text-white/40">Índice de Calidad del Aire</span>
           </div>
         </div>
 
         {/* Contextual Message */}
-        <div className="mb-6 p-3 rounded-xl bg-white/5">
-          <p className="text-white/80 text-sm leading-relaxed">
-            <span className="text-lg mr-2">{contextual.emoji}</span>
+        <div className="mb-6 rounded-xl bg-white/5 p-3">
+          <p className="text-sm leading-relaxed text-white/80">
+            <span className="mr-2 text-lg">{contextual.emoji}</span>
             {contextual.message}
           </p>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {/* Confidence */}
-          <div className="p-3 rounded-xl bg-white/5">
-            <span className="text-white/40 text-xs block mb-1">Precisión</span>
-            <span className="text-white text-sm font-medium">
-              {getConfidenceLabel(zone.confidence || 'medium')}
-            </span>
+        <div className="mb-6 grid grid-cols-2 gap-3">
+          {/* Data Source */}
+          <div className="rounded-xl bg-white/5 p-3">
+            <span className="mb-1 block text-xs text-white/40">Fuente</span>
+            <span className="text-sm font-medium text-white">{sourceLabel}</span>
           </div>
+
           {/* Dominant Pollutant */}
-          <div className="p-3 rounded-xl bg-white/5">
-            <span className="text-white/40 text-xs block mb-1">
-              Contaminante
-            </span>
-            <span className="text-white text-sm font-medium">
-              {dominantPol ? formatPollutant(dominantPol) : 'PM2.5'}
+          <div className="rounded-xl bg-white/5 p-3">
+            <span className="mb-1 block text-xs text-white/40">Contaminante</span>
+            <span className="text-sm font-medium text-white">
+              {dominantPol ? formatPollutant(dominantPol) : "—"}
             </span>
           </div>
         </div>
 
         {/* Nearest Stations */}
         <div>
-          <h3 className="text-white/60 text-xs font-medium uppercase tracking-wide mb-3 flex items-center gap-2">
-            <MapPin className="w-3 h-3" />
+          <h3 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-white/60">
+            <MapPin className="h-3 w-3" />
             Estaciones cercanas
           </h3>
-          <div className="space-y-2">
-            {stationsWithDistance.map(station => (
-              <div 
-                key={station.uid}
-                className="flex items-center justify-between p-3 rounded-xl bg-white/5"
-              >
-                <div className="flex-1 min-w-0">
-                  <span className="text-white text-sm block truncate">
-                    {station.name.replace(', Buenos Aires', '')}
-                  </span>
-                  <span className="text-white/40 text-xs">
-                    {station.distance.toFixed(1)} km
-                  </span>
+
+          {stations.length === 0 ? (
+            <div className="rounded-xl bg-white/5 p-3 text-sm text-white/60">
+              No hay estaciones disponibles para esta zona.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {stations.map((s) => (
+                <div
+                  key={s.uid}
+                  className="flex items-center justify-between rounded-xl bg-white/5 p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-white">
+                      {s.name.replace(", Buenos Aires", "")}
+                    </span>
+                    <span className="text-xs text-white/40">{s.distanceKm.toFixed(1)} km</span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-3 w-3" style={{ color: getAqiColor(s.aqi) }} />
+                    <span
+                      className="tabular-nums text-sm font-medium"
+                      style={{ color: getAqiColor(s.aqi) }}
+                    >
+                      {s.aqi}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Activity 
-                    className="w-3 h-3" 
-                    style={{ color: getAqiColor(station.aqi) }}
-                  />
-                  <span 
-                    className="text-sm font-medium tabular-nums"
-                    style={{ color: getAqiColor(station.aqi) }}
-                  >
-                    {station.aqi}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </GlassCard>
     </div>
