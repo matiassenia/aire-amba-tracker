@@ -102,14 +102,13 @@ export function getConfidenceLevel(distanceKm: number): ConfidenceLevel {
 }
 
 
+
 // -----------------------------
 // Snapshot / estimation
 // -----------------------------
 
 function confidenceFromDistanceKm(d: number): ConfidenceLevel {
-  if (d <= 5) return "high";
-  if (d <= 12) return "medium";
-  return "low";
+  return getConfidenceLevel(d);
 }
 
 export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnapshot {

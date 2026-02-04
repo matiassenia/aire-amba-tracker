@@ -13,19 +13,10 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-/**
- * Apple-ish:
- * - suave (no “neón”)
- * - más contraste en medios sin quemar los extremos
- */
 function aqiToIntensity(aqi: number) {
   const capped = clamp(aqi, 0, 180);
   const t = capped / 180;
-
-  // curva suave tipo “Apple Weather”
-  // (menos agresiva que un pow bajo, más “airy”)
   const boosted = Math.pow(t, 0.75);
-
   return clamp(boosted, 0, 1);
 }
 
@@ -36,6 +27,7 @@ export function HeatLayer({
   maxZoom = 13,
   minOpacity = 0.18,
   gradient,
+  pane = "fx", // ✅ pane target
 }: {
   points: HeatPoint[];
   radius?: number;
@@ -43,6 +35,7 @@ export function HeatLayer({
   maxZoom?: number;
   minOpacity?: number;
   gradient?: Record<number, string>;
+  pane?: string;
 }) {
   const map = useMap();
 
@@ -62,15 +55,22 @@ export function HeatLayer({
       blur,
       maxZoom,
       minOpacity,
+      pane, // ✅ importantísimo: lo manda a ese pane
       ...(gradient ? { gradient } : {}),
     });
 
     layer.addTo(map);
 
+    // ✅ aseguramos que NUNCA capture mouse
+    const canvas = (layer as any)?._canvas as HTMLCanvasElement | undefined;
+    if (canvas) {
+      canvas.style.pointerEvents = "none";
+    }
+
     return () => {
       map.removeLayer(layer);
     };
-  }, [map, heatData, radius, blur, maxZoom, minOpacity, gradient]);
+  }, [map, heatData, radius, blur, maxZoom, minOpacity, gradient, pane]);
 
   return null;
 }
