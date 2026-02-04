@@ -86,7 +86,7 @@ export function LeafletMap({
         />
 
         {/* si ParticleLayer no tiene pane prop todavía, lo arreglamos abajo */}
-        <ParticleLayer averageAqi={averageAqi} particleCount={50} pane="fx" />
+        <ParticleLayer averageAqi={averageAqi} particleCount={50}  />
       </Pane>
 
       {/* ✅ Pane zonas: interactivo */}
