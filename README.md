@@ -1,84 +1,107 @@
-# 🌬️ AireBA — Air Quality Map for Buenos Aires
+# AireBA - Air Quality Map for Buenos Aires
 
-**AireBA** is a modern web application to visualize **real-time and estimated air quality (AQI)** across **Buenos Aires and the AMBA region**.
+**AireBA** is a React/Vite web app for visualizing current and estimated air quality across Buenos Aires and the AMBA region.
 
-👉 **Live app:** https://aire-ba.vercel.app/
+Live app: https://aire-ba.vercel.app/
 
-The app combines **official monitoring stations** with **transparent estimations for uncovered areas**, presenting the information in a clear, human-friendly.
+The project is currently a frontend-only application. It consumes WAQI directly from the browser when a token is available and falls back to local demo data when it is not.
 
----
+## Current Architecture
 
-## ✨ Features
+```text
+React + TypeScript + Vite
+        -> useAirQualityData hook
+        -> WAQI map bounds API or local mock stations
+        -> local parsing and normalization
+        -> IDW interpolation for zones without direct station data
+        -> Leaflet map, heat layer, zone polygons, summary panels
+```
 
-- 🗺️ **Interactive map** with partidos, comunas, and AMBA zones  
-- 📍 **Real AQI data** from official monitoring stations (WAQI)  
-- 📊 **Estimated AQI** for zones without sensors  
-- 🧠 Distance-based interpolation (IDW) with confidence levels  
-- 🟢 Clear distinction between **REAL** vs **ESTIMATED** data  
-- 💬 Contextual recommendations:
-  - *Good day to walk*
-  - *Reduce outdoor activity*
-  - *Better to stay indoors*
-- 📱 **Mobile-first UI** with bottom-sheet interaction  
-- 🎨 Dark, minimal, map-centric design
+There is no backend, database, Redis, Celery, RAG, LangChain, or LangGraph in the current implementation.
 
----
+## Data Flow
 
-## 🧠 How it works (high level)
+1. `src/pages/Index.tsx` selects the active scope: `caba`, `conurbano`, or `amba`.
+2. `src/hooks/useAirQualityData.ts` loads stations.
+3. If `VITE_WAQI_TOKEN` exists, the app calls WAQI map bounds for Buenos Aires.
+4. `src/lib/waqi.ts` parses and validates usable station rows.
+5. If WAQI is unavailable or malformed, the app uses `src/data/mockStations.ts`.
+6. `src/lib/idw.ts` estimates AQI for zones without direct stations.
+7. `src/lib/aqiUtils.ts` builds labels, confidence levels, colors, and selected-zone snapshots.
+8. Leaflet renders the map, heat layer, particles, and zone polygons.
 
-- **Data sources**
-  - Official air quality stations (WAQI)
-  - GeoJSON boundaries for CABA, Conurbano, and AMBA
+## Tech Stack
 
-- **Estimation logic**
-  - Inverse Distance Weighting (IDW)
-  - Fallback to nearest-station average
-  - Confidence level based on distance to sensors
+- React 18
+- TypeScript
+- Vite
+- Tailwind CSS
+- shadcn/Radix UI components
+- Leaflet and React Leaflet
+- Vitest
+- ESLint
+- npm
 
-- **UX principle**
-  > Be explicit when data is estimated, and always communicate uncertainty.
+## Environment Variables
 
-This allows meaningful insights even in areas without direct sensors (e.g. parts of the Conurbano).
+Create a local `.env` file if you want live WAQI data:
 
----
+```bash
+VITE_WAQI_TOKEN=your_waqi_token
+```
 
-## 🧱 Tech Stack
+Important: because this is currently a frontend-only app, any `VITE_*` variable is exposed to the browser. This is acceptable for local/demo usage only. A production version should move WAQI access behind a backend or serverless proxy.
 
-- **Frontend:** React + TypeScript  
-- **Maps:** Leaflet + GeoJSON  
-- **Styling:** Tailwind CSS  
-- **State & Logic:** Custom hooks + pure domain utilities  
-- **Build & Deploy:** Vite + Vercel  
+## Run Locally
 
----
+```bash
+npm install
+npm run dev
+```
 
-## 🎯 Why AireBA
+The dev server runs on `127.0.0.1:8080` by default.
 
-Air quality data is often:
-- fragmented  
-- hard to interpret  
-- or unavailable at neighborhood level  
+## Quality Commands
 
-**AireBA** explores how **engineering, data modeling, and UX** can work together to deliver a trustworthy, understandable product — even when real-world data is incomplete.
+```bash
+npx tsc -b
+npm run lint
+npm test
+npm run build
+```
 
----
+## Technical Decisions
 
-## 🚧 Project Status
+- **Vite stays**: the current product is a SPA, so Next.js would add unnecessary complexity right now.
+- **Leaflet stays**: it is enough for the current map requirements and avoids Mapbox operational cost.
+- **No backend yet**: Sprint 1 focuses on stabilizing the frontend. Backend work is intentionally deferred.
+- **No AI yet**: the project needs reliable structured data and history before an assistant or RAG adds real value.
+- **npm is the package manager**: the Bun lockfile was removed to keep installs reproducible.
+- **Mock data remains**: it keeps the app usable without a WAQI token, but the UI marks it as demo data.
 
-This project is **actively evolving**.
+## Project Status
 
-- ✔️ Core architecture defined  
-- ✔️ Real + estimated AQI pipeline implemented  
-- ✔️ Interactive map and mobile UX  
-- 🔜 Historical data
-- 🔜 Alerts & health-based insights
-- 🔜 Performance and accessibility refinements
+Implemented:
 
----
+- Interactive AMBA/CABA/Conurbano map.
+- WAQI data path with parser validation.
+- Mock fallback.
+- IDW interpolation.
+- Confidence labels.
+- Mobile bottom-sheet interaction.
+- Unit tests for core pure functions.
 
-## 👤 Author
+Not implemented yet:
 
-Built by **Matías Senia**  
-Backend Developer · Data & Visualization Enthusiast  
+- Backend API.
+- Secure WAQI token proxy.
+- Persistent history.
+- PostgreSQL/PostGIS.
+- Scheduled ingestion.
+- Alerts.
+- AI assistant.
+- RAG.
 
-👉 https://github.com/matiassenia
+## Next Engineering Direction
+
+The next technical step is a small FastAPI backend that hides the WAQI token, validates external responses, and exposes a stable `/air-quality/current` endpoint for the frontend.

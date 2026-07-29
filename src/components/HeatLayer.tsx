@@ -3,6 +3,10 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet.heat";
 
+type HeatLayerWithCanvas = L.Layer & {
+  _canvas?: HTMLCanvasElement;
+};
+
 type HeatPoint = {
   lat: number;
   lon: number;
@@ -62,7 +66,7 @@ export function HeatLayer({
     layer.addTo(map);
 
     // ✅ aseguramos que NUNCA capture mouse
-    const canvas = (layer as any)?._canvas as HTMLCanvasElement | undefined;
+    const canvas = (layer as HeatLayerWithCanvas)._canvas;
     if (canvas) {
       canvas.style.pointerEvents = "none";
     }

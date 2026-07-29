@@ -2,24 +2,7 @@ import { useMemo, useState } from "react";
 import { AireAmbaMap } from "../components/AireAmbaMap";
 import { useAirQualityData } from "@/hooks/useAirQualityData";
 import type { Scope, Zone, ZoneAqiSnapshot } from "@/types/airQuality";
-import { buildZoneSnapshot } from "@/lib/aqiUtils";
-
-function aqiLabel(aqi: number) {
-  if (aqi <= 50) return "Bueno";
-  if (aqi <= 100) return "Moderado";
-  if (aqi <= 150) return "Sensibles";
-  if (aqi <= 200) return "Dañino";
-  if (aqi <= 300) return "Muy dañino";
-  return "Peligroso";
-}
-
-function recommendation(aqi: number) {
-  if (aqi <= 50) return "Hoy es un gran día para caminar 🚶‍♂️";
-  if (aqi <= 100) return "Buen día para salir. Evitá ejercicio intenso 🟡";
-  if (aqi <= 150) return "Mejor limitar actividades al aire libre ⚠️";
-  if (aqi <= 200) return "Evitá actividad física afuera 🏠";
-  return "Mejor quedarse en casa hoy 🏠";
-}
+import { buildZoneSnapshot, getAqiLabel, getContextualMessage } from "@/lib/aqiUtils";
 
 export default function Index() {
   const [scope, setScope] = useState<Scope>("amba");
@@ -39,10 +22,11 @@ export default function Index() {
 
   const summary = useMemo(() => {
     const aqi = averageAqi ?? 0;
+    const contextual = getContextualMessage(aqi);
     return {
       aqi,
-      label: aqiLabel(aqi),
-      rec: recommendation(aqi),
+      label: getAqiLabel(aqi),
+      rec: `${contextual.emoji} ${contextual.message}`,
     };
   }, [averageAqi]);
 

@@ -10,7 +10,7 @@ type Props = {
 
   // Panel A: zona seleccionada
   zoneTitle?: string | null;
-  zoneDetail: React.ReactNode; // <ZoneDetailCard .../>
+  zoneDetail: React.ReactNode;
 
   // Panel B: estado general
   generalTitle?: string;

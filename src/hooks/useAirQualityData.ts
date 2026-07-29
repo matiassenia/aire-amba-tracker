@@ -5,6 +5,7 @@ import { MOCK_STATIONS, getMockAverageAqi } from '@/data/mockStations';
 import { getZonesForScope } from '@/data/zones';
 import { idwEstimate, type Sample } from '@/lib/idw';
 import { getConfidenceLevel } from '@/lib/aqiUtils';
+import { parseWaqiMapBoundsResponse } from '@/lib/waqi';
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -37,22 +38,13 @@ async function fetchWaqiStations(): Promise<Station[] | null> {
     const url = `https://api.waqi.info/v2/map/bounds/?latlng=${bounds}&token=${token}`;
     
     const response = await fetch(url);
-    const json = await response.json();
-    
-    if (json.status !== 'ok' || !json.data) {
+    const json: unknown = await response.json();
+    const stations = parseWaqiMapBoundsResponse(json);
+
+    if (!stations) {
       console.warn('WAQI API returned invalid response:', json);
       return null;
     }
-
-    const stations: Station[] = json.data.map((item: any) => ({
-      uid: item.uid,
-      name: item.station?.name || `Station ${item.uid}`,
-      lat: item.lat,
-      lon: item.lon,
-      aqi: typeof item.aqi === 'number' ? item.aqi : parseInt(item.aqi) || 50,
-      dominentpol: item.pol,
-      time: item.utime,
-    }));
 
     // Update cache
     stationCache = { data: stations, timestamp: Date.now() };
