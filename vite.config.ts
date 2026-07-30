@@ -11,14 +11,6 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
-    proxy: {
-      "/waqi": {
-        target: "https://api.waqi.info",
-        changeOrigin: true,
-        secure: true,
-        rewrite: (p) => p.replace(/^\/waqi/, ""),
-      },
-    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

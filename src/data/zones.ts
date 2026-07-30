@@ -1,4 +1,4 @@
-// Zone data for CABA Comunas and Conurbano Partidos
+// Zone data for initial Argentina platform seeds.
 import type { Zone } from "@/types/airQuality";
 
 // CABA Comunas - Simplified polygons (approximate boundaries)
@@ -185,7 +185,7 @@ export const CABA_ZONES: Zone[] = [
   },
 ];
 
-// Conurbano Partidos - Key municipalities
+// Buenos Aires Province - initial municipalities
 export const CONURBANO_ZONES: Zone[] = [
   {
     id: "avellaneda",
@@ -452,13 +452,13 @@ export const CONURBANO_ZONES: Zone[] = [
  * If your `Scope` type already exists (imported above elsewhere),
  * you can replace the string union below with `scope: Scope`.
  */
-export function getZonesForScope(scope: "caba" | "conurbano" | "amba"): Zone[] {
+export function getZonesForScope(scope: "caba" | "buenos_aires" | "argentina"): Zone[] {
   switch (scope) {
     case "caba":
       return CABA_ZONES;
-    case "conurbano":
+    case "buenos_aires":
       return CONURBANO_ZONES;
-    case "amba":
+    case "argentina":
       return [...CABA_ZONES, ...CONURBANO_ZONES];
   }
 }
@@ -471,11 +471,11 @@ export const SCOPE_BOUNDS = {
     center: { lat: -34.6037, lon: -58.3816 } as const,
     zoom: 12,
   },
-  conurbano: {
+  buenos_aires: {
     center: { lat: -34.61, lon: -58.56 } as const,
     zoom: 11,
   },
-  amba: {
+  argentina: {
     center: { lat: -34.62, lon: -58.55 } as const,
     zoom: 10,
   },

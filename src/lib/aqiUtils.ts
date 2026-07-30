@@ -95,9 +95,9 @@ export const AQI_LEGEND = [
 
 
 
-export function getConfidenceLevel(distanceKm: number): ConfidenceLevel {
-  if (distanceKm <= 5) return "high";
-  if (distanceKm <= 12) return "medium";
+export function getConfidenceLevel(distance_km: number): ConfidenceLevel {
+  if (distance_km <= 5) return "high";
+  if (distance_km <= 12) return "medium";
   return "low";
 }
 
@@ -122,11 +122,11 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
       lat: s.lat,
       lon: s.lon,
       aqi: s.aqi,
-      distanceKm: haversineDistanceKm(center, { lat: s.lat, lon: s.lon }),
+      distance_km: haversineDistanceKm(center, { lat: s.lat, lon: s.lon }),
     }))
-    .sort((a, b) => a.distanceKm - b.distanceKm);
+    .sort((a, b) => a.distance_km - b.distance_km);
 
-  const nearestStations = stationsByDistance.slice(0, 3);
+  const nearest_stations = stationsByDistance.slice(0, 3);
 
   const stationsInside = stations.filter((s) =>
     zone.polygon?.length ? pointInPolygon({ lat: s.lat, lon: s.lon }, zone.polygon) : false
@@ -149,14 +149,14 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
     const confidence: ConfidenceLevel = "high";
 
     return {
-      zoneId: zone.id,
-      zoneName: zone.name,
+      zone_id: zone.id,
+      zone_name: zone.name,
       aqi,
       source,
       confidence,
-      nearestStations,
-      dominentpol: insideSorted[0]?.station.dominentpol,
-      lastUpdated: insideSorted[0]?.station.time ?? null,
+      nearest_stations,
+      dominant_variable: insideSorted[0]?.station.dominant_variable,
+      last_updated: insideSorted[0]?.station.time ?? null,
     };
   }
 
@@ -182,17 +182,17 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
 
   aqi = Math.round(finalEstimated ?? 0);
 
-  const d0 = nearestStations[0]?.distanceKm ?? 999;
+  const d0 = nearest_stations[0]?.distance_km ?? 999;
   const confidence: ConfidenceLevel = estimated === null ? "low" : confidenceFromDistanceKm(d0);
 
   return {
-    zoneId: zone.id,
-    zoneName: zone.name,
+    zone_id: zone.id,
+    zone_name: zone.name,
     aqi,
     source,
     confidence,
-    nearestStations,
-    dominentpol: undefined,
-    lastUpdated: null,
+    nearest_stations,
+    dominant_variable: undefined,
+    last_updated: null,
   };
 }

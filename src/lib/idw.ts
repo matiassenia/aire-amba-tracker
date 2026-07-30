@@ -8,7 +8,7 @@ function clamp(n: number, min: number, max: number) {
 
 /**
  * Distancia aproximada en km (rápida) usando equirectangular.
- * Suficiente para AMBA (área chica).
+ * Fast enough for the current regional viewport.
  */
 function distKm(a: LatLon, b: LatLon) {
   const R = 6371;
@@ -36,7 +36,7 @@ export function idwEstimate(
 ): number | null {
   const power = opts.power ?? 2;
   const k = opts.k ?? 8;
-  const maxDistKm = opts.maxDistKm ?? 40; // AMBA
+  const maxDistKm = opts.maxDistKm ?? 40;
   const minPoints = opts.minPoints ?? 3;
 
   // Calcula distancias y filtra por maxDistKm

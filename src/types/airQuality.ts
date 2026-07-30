@@ -1,7 +1,7 @@
-// Air Quality Types for Aire AMBA
+// Environmental platform types.
 
 export interface Station {
-  uid: number; // WAQI station UID
+  uid: number;
   name: string;
   lat: number;
   lon: number;
@@ -14,12 +14,12 @@ export interface Station {
     co?: number;
     so2?: number;
   };
-  dominentpol?: string;
+  dominant_variable?: string | null;
   time?: string; // last update (string from API)
 }
 
 export type ZoneType = "comuna" | "partido";
-export type Scope = "caba" | "conurbano" | "amba";
+export type Scope = "caba" | "buenos_aires" | "argentina";
 
 export interface Zone {
   id: string;
@@ -54,19 +54,19 @@ export type NearestStationInfo = {
   lat: number;
   lon: number;
   aqi: number;
-  distanceKm: number;
+  distance_km: number;
 };
 
 /** Snapshot for the currently selected zone (and/or cached per zone) */
 export type ZoneAqiSnapshot = {
-  zoneId: string;
-  zoneName: string;
+  zone_id: string;
+  zone_name: string;
   aqi: number;
   source: DataSourceType;
   confidence: ConfidenceLevel;
-  nearestStations: NearestStationInfo[];
-  dominentpol?: string;
-  lastUpdated?: string | null;
+  nearest_stations: NearestStationInfo[];
+  dominant_variable?: string | null;
+  last_updated?: string | null;
 };
 
 export interface AirQualityData {

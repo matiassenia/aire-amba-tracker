@@ -11,8 +11,8 @@ interface BottomBarProps {
 
 const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'caba', label: 'CABA' },
-  { value: 'conurbano', label: 'Conurbano' },
-  { value: 'amba', label: 'AMBA' },
+  { value: 'buenos_aires', label: 'Buenos Aires' },
+  { value: 'argentina', label: 'Argentina' },
 ];
 
 export function BottomBar({ scope, onScopeChange }: BottomBarProps) {

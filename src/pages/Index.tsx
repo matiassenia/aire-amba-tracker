@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
-import { AireAmbaMap } from "../components/AireAmbaMap";
+import { EnvironmentalMap } from "../components/EnvironmentalMap";
 import { useAirQualityData } from "@/hooks/useAirQualityData";
 import type { Scope, Zone, ZoneAqiSnapshot } from "@/types/airQuality";
 import { buildZoneSnapshot, getAqiLabel, getContextualMessage } from "@/lib/aqiUtils";
 
 export default function Index() {
-  const [scope, setScope] = useState<Scope>("amba");
+  const [scope, setScope] = useState<Scope>("argentina");
   const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
 
   const { stations, zones, averageAqi, lastUpdated, isUsingMockData, isLoading } =
@@ -36,9 +36,9 @@ export default function Index() {
       <header className="sticky top-0 z-30 glass-card px-4 py-3">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold">Aire AMBA</h1>
+            <h1 className="text-lg font-semibold">Argentina Environmental Platform</h1>
             <p className="text-sm text-muted-foreground">
-              Calidad del aire · WAQI {isUsingMockData ? "· demo" : ""}
+              Calidad del aire · API ambiental {isUsingMockData ? "· demo" : ""}
             </p>
           </div>
 
@@ -55,7 +55,7 @@ export default function Index() {
           {/* MAPA módulo */}
           <section className="min-w-0">
             <div className="h-[56vh] min-h-[380px] max-h-[680px]">
-              <AireAmbaMap
+              <EnvironmentalMap
                 scope={scope}
                 onScopeChange={(s: Scope) => {
                   setScope(s);
@@ -125,20 +125,20 @@ export default function Index() {
                         </div>
 
                         {selectedSnapshot.source === "ESTIMATED" &&
-                          selectedSnapshot.nearestStations.length > 0 && (
+                          selectedSnapshot.nearest_stations.length > 0 && (
                             <div className="mt-4">
                               <div className="text-xs text-white/50">
                                 Basado en estaciones cercanas
                               </div>
                               <ul className="mt-2 space-y-1">
-                                {selectedSnapshot.nearestStations.map((s) => (
+                                {selectedSnapshot.nearest_stations.map((s) => (
                                   <li
                                     key={s.uid}
                                     className="flex items-center justify-between text-sm text-white/80"
                                   >
                                     <span className="truncate">{s.name}</span>
                                     <span className="text-white/50">
-                                      {s.distanceKm.toFixed(1)} km
+                                      {s.distance_km.toFixed(1)} km
                                     </span>
                                   </li>
                                 ))}

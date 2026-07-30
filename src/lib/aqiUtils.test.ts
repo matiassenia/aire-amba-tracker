@@ -60,7 +60,7 @@ describe("buildZoneSnapshot", () => {
         lat: -34.6,
         lon: -58.4,
         aqi: 55,
-        dominentpol: "pm25",
+        dominant_variable: "pm25",
         time: "2026-07-29T10:00:00Z",
       },
     ];
@@ -69,8 +69,8 @@ describe("buildZoneSnapshot", () => {
       aqi: 55,
       source: "REAL",
       confidence: "high",
-      dominentpol: "pm25",
-      lastUpdated: "2026-07-29T10:00:00Z",
+      dominant_variable: "pm25",
+      last_updated: "2026-07-29T10:00:00Z",
     });
   });
 
@@ -85,6 +85,6 @@ describe("buildZoneSnapshot", () => {
 
     expect(snapshot.source).toBe("ESTIMATED");
     expect(snapshot.aqi).toBeGreaterThan(0);
-    expect(snapshot.nearestStations).toHaveLength(3);
+    expect(snapshot.nearest_stations).toHaveLength(3);
   });
 });

@@ -1,4 +1,4 @@
-// Mock station data for Buenos Aires - used when WAQI_TOKEN is not available
+// Mock station data for Buenos Aires - used when the backend API is unavailable.
 import type { Station } from '@/types/airQuality';
 
 export const MOCK_STATIONS: Station[] = [
@@ -10,7 +10,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4207,
     aqi: 42,
     iaqi: { pm25: 42, pm10: 28, o3: 35 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -20,7 +20,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.3935,
     aqi: 38,
     iaqi: { pm25: 38, pm10: 25, o3: 32 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -30,7 +30,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.3731,
     aqi: 55,
     iaqi: { pm25: 55, pm10: 42, o3: 28 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -40,7 +40,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.3631,
     aqi: 68,
     iaqi: { pm25: 68, pm10: 55, o3: 22, no2: 45 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -50,7 +50,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4584,
     aqi: 35,
     iaqi: { pm25: 35, pm10: 22, o3: 38 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -60,7 +60,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4356,
     aqi: 48,
     iaqi: { pm25: 48, pm10: 35, o3: 30 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -70,7 +70,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4401,
     aqi: 45,
     iaqi: { pm25: 45, pm10: 32, o3: 33 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -80,7 +80,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4561,
     aqi: 32,
     iaqi: { pm25: 32, pm10: 20, o3: 40 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -90,7 +90,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4631,
     aqi: 52,
     iaqi: { pm25: 52, pm10: 38, o3: 28 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -100,10 +100,10 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4731,
     aqi: 65,
     iaqi: { pm25: 65, pm10: 52, o3: 25, no2: 38 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
-  // Conurbano Stations
+  // Buenos Aires Province stations
   {
     uid: 2001,
     name: 'Avellaneda, Buenos Aires',
@@ -111,7 +111,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.3656,
     aqi: 72,
     iaqi: { pm25: 72, pm10: 58, o3: 22, no2: 52 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -121,7 +121,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.3926,
     aqi: 78,
     iaqi: { pm25: 78, pm10: 62, o3: 20, no2: 48 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -131,7 +131,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.2545,
     aqi: 58,
     iaqi: { pm25: 58, pm10: 45, o3: 32 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -141,7 +141,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4006,
     aqi: 62,
     iaqi: { pm25: 62, pm10: 48, o3: 28, no2: 35 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -151,7 +151,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.5278,
     aqi: 28,
     iaqi: { pm25: 28, pm10: 18, o3: 42 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -161,7 +161,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.4729,
     aqi: 35,
     iaqi: { pm25: 35, pm10: 22, o3: 38 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -171,7 +171,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.5797,
     aqi: 25,
     iaqi: { pm25: 25, pm10: 15, o3: 45 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -181,7 +181,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.5591,
     aqi: 82,
     iaqi: { pm25: 82, pm10: 68, o3: 18, no2: 55 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -191,7 +191,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.6197,
     aqi: 55,
     iaqi: { pm25: 55, pm10: 42, o3: 30 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -201,7 +201,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.5644,
     aqi: 48,
     iaqi: { pm25: 48, pm10: 35, o3: 32 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -211,7 +211,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.5356,
     aqi: 52,
     iaqi: { pm25: 52, pm10: 40, o3: 28 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -221,7 +221,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.3833,
     aqi: 58,
     iaqi: { pm25: 58, pm10: 45, o3: 25 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -231,7 +231,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.2753,
     aqi: 62,
     iaqi: { pm25: 62, pm10: 50, o3: 22 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
   {
@@ -241,7 +241,7 @@ export const MOCK_STATIONS: Station[] = [
     lon: -58.2108,
     aqi: 48,
     iaqi: { pm25: 48, pm10: 35, o3: 35 },
-    dominentpol: 'pm25',
+    dominant_variable: 'pm25',
     time: new Date().toISOString(),
   },
 ];

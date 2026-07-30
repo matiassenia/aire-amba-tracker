@@ -1,14 +1,12 @@
-// Hook for fetching air quality data with mock fallback
 import { useState, useEffect, useMemo } from 'react';
 import type { Station, Zone, AirQualityData, Scope } from '@/types/airQuality';
 import { MOCK_STATIONS, getMockAverageAqi } from '@/data/mockStations';
 import { getZonesForScope } from '@/data/zones';
 import { idwEstimate, type Sample } from '@/lib/idw';
 import { getConfidenceLevel } from '@/lib/aqiUtils';
-import { parseWaqiMapBoundsResponse } from '@/lib/waqi';
+import { fetchStations } from '@/lib/apiClient';
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-
 interface CacheEntry {
   data: Station[];
   timestamp: number;
@@ -16,44 +14,17 @@ interface CacheEntry {
 
 let stationCache: CacheEntry | null = null;
 
-/**
- * Fetch stations from WAQI API (simplified - uses mock for now)
- */
-async function fetchWaqiStations(): Promise<Station[] | null> {
-  const token = import.meta.env.VITE_WAQI_TOKEN;
-  
-  if (!token) {
-    console.log('No WAQI token found, using mock data');
-    return null;
-  }
-
-  // Check cache
+async function fetchStationsFromApi(): Promise<Station[] | null> {
   if (stationCache && Date.now() - stationCache.timestamp < CACHE_TTL_MS) {
     return stationCache.data;
   }
 
-  try {
-    // WAQI map bounds search for Buenos Aires
-    const bounds = '-35.0,-59.0,-34.3,-58.0'; // south,west,north,east
-    const url = `https://api.waqi.info/v2/map/bounds/?latlng=${bounds}&token=${token}`;
-    
-    const response = await fetch(url);
-    const json: unknown = await response.json();
-    const stations = parseWaqiMapBoundsResponse(json);
-
-    if (!stations) {
-      console.warn('WAQI API returned invalid response:', json);
-      return null;
-    }
-
-    // Update cache
+  const stations = await fetchStations();
+  if (stations) {
     stationCache = { data: stations, timestamp: Date.now() };
-    
-    return stations;
-  } catch (error) {
-    console.error('Error fetching WAQI data:', error);
-    return null;
   }
+
+  return stations;
 }
 
 /**
@@ -110,9 +81,9 @@ function filterStationsByScope(stations: Station[], scope: Scope): Station[] {
     switch (scope) {
       case 'caba':
         return inCaba;
-      case 'conurbano':
+      case 'buenos_aires':
         return !inCaba;
-      case 'amba':
+      case 'argentina':
         return true;
     }
   });
@@ -133,7 +104,7 @@ export function useAirQualityData(scope: Scope): AirQualityData & { isLoading: b
 
     async function load() {
       setIsLoading(true);
-      const realStations = await fetchWaqiStations();
+      const realStations = await fetchStationsFromApi();
       
       if (cancelled) return;
 
