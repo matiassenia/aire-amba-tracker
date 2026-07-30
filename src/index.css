@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Aire AMBA - Apple Weather Edition - Dark Theme First
+/* Aire Argentina - cartographic dark theme
    All colors MUST be HSL. */
 
 @layer base {
@@ -112,6 +112,10 @@
     overflow-x: hidden;
   }
 
+  #root {
+    min-height: 100%;
+  }
+
   /* iOS-like smoothness + prevent weird double-tap zoom */
   button, a {
     -webkit-tap-highlight-color: transparent;
@@ -136,7 +140,7 @@
     @apply backdrop-blur-xl bg-white/10 border border-white/20 shadow-lg shadow-black/10;
   }
 
-  /* Map module shell (THIS solves your "map takes whole screen" issue) */
+  /* Map module shell */
   .map-shell {
     @apply relative overflow-hidden rounded-2xl border border-white/10 shadow-xl shadow-black/30;
     background: linear-gradient(
@@ -239,13 +243,48 @@
 
 /* Popups */
 .leaflet-popup-content-wrapper {
-  @apply !bg-black/75 !backdrop-blur-md !border !border-white/10 !rounded-2xl !text-white !shadow-xl;
+  @apply !bg-slate-950/90 !backdrop-blur-xl !border !border-white/10 !rounded-2xl !text-white !shadow-2xl;
 }
 .leaflet-popup-content {
-  @apply !m-3;
+  @apply !m-3 !text-white;
 }
 .leaflet-popup-tip {
-  @apply !bg-black/75;
+  @apply !bg-slate-950/90;
+}
+.leaflet-popup-close-button {
+  color: rgba(255,255,255,0.7) !important;
+}
+.leaflet-popup-close-button:hover {
+  color: rgba(255,255,255,0.95) !important;
+}
+
+.station-marker {
+  filter: drop-shadow(0 0 8px rgba(148, 163, 184, 0.2));
+  transition: opacity 180ms ease, filter 180ms ease;
+}
+.station-marker-active {
+  filter: drop-shadow(0 0 12px rgba(103, 232, 249, 0.38));
+}
+.station-cluster-icon {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,255,255,0.18), rgba(34,211,238,0.12) 45%, rgba(15,23,42,0.02) 72%);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 18px 45px rgba(0,0,0,0.35), 0 0 34px rgba(34,211,238,0.22);
+  backdrop-filter: blur(10px);
+}
+.station-cluster-core {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.24);
+  background: rgba(15, 23, 42, 0.68);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* Controls */

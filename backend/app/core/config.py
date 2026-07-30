@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:8080"])
     database_url: str = "sqlite:///./backend/dev.db"
     spatial_backend: str = "in_memory"
+    station_data_source: str = "waqi"
     demo_mode: bool = False
+    waqi_api_token: str | None = None
+    waqi_base_url: str = "https://api.waqi.info"
     waqi_token: str | None = None
     waqi_timeout_seconds: float = 5.0
     waqi_bounds: str = "-35.0,-59.0,-34.3,-58.0"
@@ -40,6 +43,14 @@ class Settings(BaseSettings):
         allowed = {"in_memory", "postgis"}
         if value not in allowed:
             raise ValueError(f"spatial_backend must be one of {sorted(allowed)}")
+        return value
+
+    @field_validator("station_data_source")
+    @classmethod
+    def validate_station_data_source(cls, value: str) -> str:
+        allowed = {"waqi", "in_memory", "postgis"}
+        if value not in allowed:
+            raise ValueError(f"station_data_source must be one of {sorted(allowed)}")
         return value
 
     @field_validator("waqi_bounds")

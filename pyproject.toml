@@ -41,4 +41,5 @@ testpaths = ["backend/tests"]
 pythonpath = ["backend"]
 markers = [
   "postgis: integration tests that require PostgreSQL with PostGIS",
+  "waqi_real: manual integration tests that call the real WAQI API",
 ]

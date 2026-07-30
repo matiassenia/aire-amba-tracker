@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ErrorPayload(BaseModel):
@@ -89,6 +89,39 @@ class StationDto(BaseModel):
     aqi: int | None = None
     dominant_variable: str | None = None
     time: str | None = None
+    source: str | None = None
+    measured_at: str | None = None
+    data_available: bool = False
+    iaqi: dict[str, float | None] = Field(default_factory=dict)
+    region_id: str | None = None
+    region_name: str | None = None
+
+
+class RegionDto(BaseModel):
+    id: str
+    name: str
+    bounds: list[float]
+    center: list[float]
+    default_zoom: int
+    description: str
+
+
+class StationQueryMetadataDto(BaseModel):
+    region_id: str
+    region_name: str
+    source: str
+    cache_hit: bool
+    cache_ttl_seconds: int
+    stations_discovered: int
+    stations_returned: int
+    stations_deduplicated: int
+    stations_with_data: int
+    pollutants_available: list[str]
+    timestamps_received: int
+    updated_at: str
+    coverage_partial: bool
+    unavailable_regions: list[str] = Field(default_factory=list)
+    regions: list[dict[str, object]] = Field(default_factory=list)
 
 
 class GeometryDto(BaseModel):

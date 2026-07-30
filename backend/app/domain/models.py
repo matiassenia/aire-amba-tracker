@@ -136,6 +136,11 @@ class Station:
     timezone: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
     active: bool = True
+    aqi: int | None = None
+    dominant_variable: str | None = None
+    measured_at: datetime | None = None
+    data_available: bool = False
+    iaqi: dict[str, float | None] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

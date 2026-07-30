@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.analytics.service import distance_km
 from app.api.dependencies import (
@@ -17,6 +17,7 @@ from app.api.dependencies import (
     get_source_statuses,
     get_spatial_seed_stations,
     get_spatial_service,
+    get_station_repository,
 )
 from app.api.schemas import (
     BoundingBoxDto,
@@ -28,13 +29,15 @@ from app.api.schemas import (
     MeasurementDto,
     NearestStationDto,
     NearestStationResultDto,
+    RegionDto,
     SourceStatusDto,
     StationDto,
+    StationQueryMetadataDto,
     ZoneCurrentDto,
     ZoneDto,
     ZoneSnapshotHistoryDto,
 )
-from app.application.ports import GeometryRepository
+from app.application.ports import GeometryRepository, StationRepository
 from app.application.use_cases import (
     GetCurrentZoneSnapshot,
     GetMeasurementsForStation,
@@ -57,6 +60,13 @@ from app.domain.models import (
     Zone,
     ZoneSnapshot,
 )
+from app.domain.regions import (
+    ARGENTINA_REGION,
+    REGION_BY_ID,
+    Bounds,
+    Region,
+    public_regions,
+)
 from app.gis.services import SpatialService
 
 api_router = APIRouter()
@@ -64,6 +74,7 @@ api_router = APIRouter()
 ListZonesDep = Annotated[ListZones, Depends(get_list_zones)]
 GetZoneDep = Annotated[GetZone, Depends(get_get_zone)]
 ListStationsDep = Annotated[ListStations, Depends(get_list_stations)]
+StationRepositoryDep = Annotated[StationRepository, Depends(get_station_repository)]
 GetCurrentSnapshotDep = Annotated[GetCurrentZoneSnapshot, Depends(get_current_zone_snapshot)]
 GetSourceStatusesDep = Annotated[GetSourceStatuses, Depends(get_source_statuses)]
 ListVariablesDep = Annotated[ListEnvironmentalVariables, Depends(get_list_environmental_variables)]
@@ -102,7 +113,61 @@ def _station_dto(station: Station) -> StationDto:
         name=station.name,
         lat=station.lat,
         lon=station.lon,
+        aqi=station.aqi,
+        dominant_variable=station.dominant_variable,
+        time=station.measured_at.isoformat() if station.measured_at else None,
+        source=station.source_id,
+        measured_at=station.measured_at.isoformat() if station.measured_at else None,
+        data_available=station.data_available,
+        iaqi={key: station.iaqi.get(key) for key in ("pm25", "pm10", "no2", "o3", "so2", "co")},
+        region_id=station.metadata.get("region_id"),
+        region_name=station.metadata.get("region_name"),
     )
+
+
+def _region_dto(region: Region) -> RegionDto:
+    return RegionDto(
+        id=region.id,
+        name=region.name,
+        bounds=[region.bounds.south, region.bounds.west, region.bounds.north, region.bounds.east],
+        center=[region.center_lat, region.center_lon],
+        default_zoom=region.default_zoom,
+        description=region.description,
+    )
+
+
+def _validate_station_query(
+    region: str | None,
+    bounds: str | None,
+) -> tuple[str | None, str | None]:
+    if region is not None and bounds is not None:
+        raise HTTPException(status_code=422, detail="Use either region or bounds, not both")
+    if region is not None and region not in REGION_BY_ID and region != ARGENTINA_REGION.id:
+        raise HTTPException(status_code=404, detail="Unknown region")
+    if bounds is None:
+        return region, None
+    parsed = _parse_bounds(bounds)
+    return None, parsed.as_waqi_latlng()
+
+
+def _parse_bounds(raw: str) -> Bounds:
+    parts = raw.split(",")
+    if len(parts) != 4:
+        raise HTTPException(status_code=422, detail="Bounds must be south,west,north,east")
+    try:
+        south, west, north, east = (float(part) for part in parts)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Bounds coordinates must be numbers") from exc
+    if not (-90 <= south <= 90 and -90 <= north <= 90):
+        raise HTTPException(status_code=422, detail="Bounds latitude out of range")
+    if not (-180 <= west <= 180 and -180 <= east <= 180):
+        raise HTTPException(status_code=422, detail="Bounds longitude out of range")
+    if south >= north or west >= east:
+        raise HTTPException(status_code=422, detail="Bounds must satisfy south<north and west<east")
+    area_degrees = (north - south) * (east - west)
+    if area_degrees > 100:
+        raise HTTPException(status_code=422, detail="Bounds area is too large")
+    return Bounds(south=south, west=west, north=north, east=east)
 
 
 def _bbox_dto(bbox: tuple[float, float, float, float] | None) -> BoundingBoxDto | None:
@@ -192,6 +257,11 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ok", version=get_settings().app_version)
 
 
+@api_router.get("/regions", response_model=list[RegionDto])
+async def list_regions() -> list[RegionDto]:
+    return [_region_dto(region) for region in public_regions()]
+
+
 @api_router.get("/zones", response_model=list[ZoneDto])
 async def list_zones(use_case: ListZonesDep) -> list[ZoneDto]:
     return [_zone_dto(zone) for zone in use_case.execute()]
@@ -273,10 +343,37 @@ async def get_zone_current(
 @api_router.get("/stations", response_model=list[StationDto])
 async def list_stations(
     use_case: ListStationsDep,
+    region: str | None = None,
+    bounds: str | None = None,
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> list[StationDto]:
-    return [_station_dto(station) for station in use_case.execute(limit=limit, offset=offset)]
+    region_id, parsed_bounds = _validate_station_query(region, bounds)
+    return [
+        _station_dto(station)
+        for station in use_case.execute(
+            limit=limit,
+            offset=offset,
+            region_id=region_id,
+            bounds=parsed_bounds,
+        )
+    ]
+
+
+@api_router.get("/stations/meta", response_model=StationQueryMetadataDto)
+async def stations_metadata(
+    repository: StationRepositoryDep,
+    region: str | None = None,
+    bounds: str | None = None,
+) -> StationQueryMetadataDto:
+    region_id, parsed_bounds = _validate_station_query(region, bounds)
+    query_id = "custom-bounds" if parsed_bounds is not None else region_id or "amba"
+    repository.list_stations(limit=1, region_id=region_id, bounds=parsed_bounds)
+    metadata_getter = getattr(repository, "last_metadata", None)
+    metadata = metadata_getter(query_id) if callable(metadata_getter) else None
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="Station metadata is not available")
+    return StationQueryMetadataDto.model_validate(metadata)
 
 
 @api_router.get("/stations/near", response_model=list[NearestStationResultDto])

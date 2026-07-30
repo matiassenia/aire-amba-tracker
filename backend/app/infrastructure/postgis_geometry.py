@@ -40,9 +40,10 @@ def _validate_radius(radius_km: float) -> None:
 def _polygon_geojson(polygon: tuple[tuple[float, float], ...]) -> str:
     if len(polygon) < 3:
         raise InvalidGeometryError("Polygon must include at least three points")
-    return json.dumps(
-        {"type": "Polygon", "coordinates": [[[lon, lat] for lat, lon in polygon]]}
-    )
+    ring = [[lon, lat] for lat, lon in polygon]
+    if ring[-1] != ring[0]:
+        ring.append(ring[0])
+    return json.dumps({"type": "Polygon", "coordinates": [ring]})
 
 
 class PostGISGeometryRepository(GeometryRepository):

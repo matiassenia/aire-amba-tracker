@@ -90,7 +90,13 @@ class InMemoryStationRepository(StationRepository):
     def __init__(self, stations: tuple[Station, ...] = SPATIAL_STATIONS) -> None:
         self._stations = stations
 
-    def list_stations(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
+    def list_stations(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        region_id: str | None = None,
+        bounds: str | None = None,
+    ) -> tuple[Station, ...]:
         active_stations = tuple(station for station in self._stations if station.active)
         return active_stations[offset : offset + limit]
 
@@ -99,7 +105,13 @@ class SQLAlchemyStationRepository(StationRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def list_stations(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
+    def list_stations(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        region_id: str | None = None,
+        bounds: str | None = None,
+    ) -> tuple[Station, ...]:
         statement = (
             select(StationOrm)
             .where(StationOrm.active.is_(True))

@@ -1,7 +1,6 @@
 // Zone Polygons - Interactive zone boundaries on the map
 import { Polygon, Tooltip } from 'react-leaflet';
 import type { Zone } from '@/types/airQuality';
-import { getAqiColorWithAlpha, getAqiLabel } from '@/lib/aqiUtils';
 
 interface ZonePolygonsProps {
   zones: Zone[];
@@ -13,9 +12,6 @@ export function ZonePolygons({ zones, onZoneClick, selectedZoneId }: ZonePolygon
   return (
     <>
       {zones.map(zone => {
-        const aqi = zone.estimatedAqi ?? 50;
-        const fillColor = getAqiColorWithAlpha(aqi, 0.35);
-        const strokeColor = getAqiColorWithAlpha(aqi, 0.7);
         const isSelected = zone.id === selectedZoneId;
 
         return (
@@ -23,27 +19,28 @@ export function ZonePolygons({ zones, onZoneClick, selectedZoneId }: ZonePolygon
             key={zone.id}
             positions={zone.polygon.map(([lat, lon]) => [lat, lon] as [number, number])}
             pathOptions={{
-              fillColor,
-              fillOpacity: isSelected ? 0.5 : 0.35,
-              color: isSelected ? '#fff' : strokeColor,
+              fillOpacity: 0,
+              color: isSelected ? '#fff' : 'rgba(255,255,255,0.32)',
               weight: isSelected ? 2 : 1,
-              opacity: isSelected ? 0.8 : 0.5,
+              opacity: isSelected ? 0.85 : 0.35,
             }}
             eventHandlers={{
               click: () => onZoneClick(zone),
               mouseover: (e) => {
                 const layer = e.target;
                 layer.setStyle({
-                  fillOpacity: 0.5,
+                  fillOpacity: 0,
                   weight: 2,
+                  opacity: 0.75,
                 });
               },
               mouseout: (e) => {
                 if (!isSelected) {
                   const layer = e.target;
                   layer.setStyle({
-                    fillOpacity: 0.35,
+                    fillOpacity: 0,
                     weight: 1,
+                    opacity: 0.35,
                   });
                 }
               },
@@ -57,9 +54,7 @@ export function ZonePolygons({ zones, onZoneClick, selectedZoneId }: ZonePolygon
             >
               <div className="text-center">
                 <div className="font-medium">{zone.name}</div>
-                <div className="text-sm opacity-80">
-                  AQI: {aqi} - {getAqiLabel(aqi)}
-                </div>
+                <div className="text-sm opacity-80">Borde de referencia</div>
               </div>
             </Tooltip>
           </Polygon>

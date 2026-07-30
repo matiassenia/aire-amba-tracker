@@ -445,42 +445,8 @@ export const CONURBANO_ZONES: Zone[] = [
   
 ];
 
-/**
- * Get all zones for a given scope
- *
- * NOTE:
- * If your `Scope` type already exists (imported above elsewhere),
- * you can replace the string union below with `scope: Scope`.
- */
-export function getZonesForScope(scope: "caba" | "buenos_aires" | "argentina"): Zone[] {
-  switch (scope) {
-    case "caba":
-      return CABA_ZONES;
-    case "buenos_aires":
-      return CONURBANO_ZONES;
-    case "argentina":
-      return [...CABA_ZONES, ...CONURBANO_ZONES];
-  }
+export function getZonesForRegion(regionId: string): Zone[] {
+  if (regionId !== "amba") return [];
+  return [...CABA_ZONES, ...CONURBANO_ZONES];
 }
-
-/**
- * Map bounds for each scope
- */
-export const SCOPE_BOUNDS = {
-  caba: {
-    center: { lat: -34.6037, lon: -58.3816 } as const,
-    zoom: 12,
-  },
-  buenos_aires: {
-    center: { lat: -34.61, lon: -58.56 } as const,
-    zoom: 11,
-  },
-  argentina: {
-    center: { lat: -34.62, lon: -58.55 } as const,
-    zoom: 10,
-  },
-
-
-  
-};
 

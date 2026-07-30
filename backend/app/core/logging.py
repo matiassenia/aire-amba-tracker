@@ -1,6 +1,16 @@
 import json
 import logging
+import re
 from typing import Any
+
+_SECRET_QUERY_PARAM_PATTERN = re.compile(
+    r"([?&](?:token|api_key|apikey|key)=)[^&\s\"]+",
+    re.IGNORECASE,
+)
+
+
+def sanitize_log_message(message: str) -> str:
+    return _SECRET_QUERY_PARAM_PATTERN.sub(r"\1***", message)
 
 
 class JsonFormatter(logging.Formatter):
@@ -8,7 +18,7 @@ class JsonFormatter(logging.Formatter):
         payload: dict[str, Any] = {
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": sanitize_log_message(record.getMessage()),
         }
         for key in ("request_id", "method", "path", "status_code", "duration_ms", "source_id"):
             value = getattr(record, key, None)
@@ -26,3 +36,5 @@ def configure_logging(level: str) -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level.upper())
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

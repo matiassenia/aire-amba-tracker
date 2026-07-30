@@ -1,12 +1,17 @@
 import os
+from collections.abc import Generator
 from datetime import UTC, datetime
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from app.infrastructure.postgis_geometry import PostGISGeometryRepository
+from app.api.dependencies import get_spatial_service
+from app.gis.services import SpatialService
+from app.infrastructure.postgis_geometry import PostGISGeometryRepository, _polygon_geojson
+from app.main import create_app
 
 pytestmark = pytest.mark.postgis
 
@@ -139,6 +144,23 @@ def _close_session(session: Session) -> None:
         bind.dispose()
 
 
+def test_polygon_geojson_closes_open_linear_ring() -> None:
+    geojson = _polygon_geojson(((-34.7, -58.5), (-34.7, -58.3), (-34.5, -58.3)))
+
+    assert geojson == (
+        '{"type": "Polygon", "coordinates": [[[-58.5, -34.7], [-58.3, -34.7], '
+        '[-58.3, -34.5], [-58.5, -34.7]]]}'
+    )
+
+
+def test_polygon_geojson_preserves_closed_linear_ring() -> None:
+    geojson = _polygon_geojson(
+        ((-34.7, -58.5), (-34.7, -58.3), (-34.5, -58.3), (-34.7, -58.5))
+    )
+
+    assert geojson.count("[-58.5, -34.7]") == 2
+
+
 def test_postgis_repository_executes_real_spatial_queries() -> None:
     session = _session()
     try:
@@ -162,6 +184,9 @@ def test_postgis_repository_executes_real_spatial_queries() -> None:
         assert repository.zones_intersecting_polygon(
             ((-34.7, -58.5), (-34.7, -58.3), (-34.5, -58.3), (-34.7, -58.5))
         )[0].id == "z1"
+        assert repository.zones_intersecting_polygon(
+            ((-34.7, -58.5), (-34.7, -58.3), (-34.5, -58.3))
+        )[0].id == "z1"
     finally:
         _close_session(session)
 
@@ -173,4 +198,25 @@ def test_postgis_repository_reports_missing_geometry() -> None:
 
         assert repository.get_geometry("zone", "missing") is None
     finally:
+        _close_session(session)
+
+
+def test_zones_intersects_endpoint_accepts_open_polygon_with_postgis() -> None:
+    session = _session()
+
+    def override_spatial_service() -> Generator[SpatialService]:
+        yield SpatialService(PostGISGeometryRepository(session))
+
+    app = create_app()
+    app.dependency_overrides[get_spatial_service] = override_spatial_service
+    try:
+        response = TestClient(app).get(
+            "/zones/intersects",
+            params={"polygon": "-34.7,-58.5;-34.7,-58.3;-34.5,-58.3"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["zones"][0]["id"] == "z1"
+    finally:
+        app.dependency_overrides.clear()
         _close_session(session)

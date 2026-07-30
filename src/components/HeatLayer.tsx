@@ -10,19 +10,8 @@ type HeatLayerWithCanvas = L.Layer & {
 type HeatPoint = {
   lat: number;
   lon: number;
-  aqi: number;
+  intensity: number;
 };
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function aqiToIntensity(aqi: number) {
-  const capped = clamp(aqi, 0, 180);
-  const t = capped / 180;
-  const boosted = Math.pow(t, 0.75);
-  return clamp(boosted, 0, 1);
-}
 
 export function HeatLayer({
   points,
@@ -45,7 +34,7 @@ export function HeatLayer({
 
   const heatData = useMemo(() => {
     return points.map(
-      (p) => [p.lat, p.lon, aqiToIntensity(p.aqi)] as [number, number, number]
+      (p) => [p.lat, p.lon, p.intensity] as [number, number, number]
     );
   }, [points]);
 

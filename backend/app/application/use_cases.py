@@ -47,8 +47,19 @@ class ListStations:
     def __init__(self, stations: StationRepository) -> None:
         self._stations = stations
 
-    def execute(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
-        return self._stations.list_stations(limit=limit, offset=offset)
+    def execute(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        region_id: str | None = None,
+        bounds: str | None = None,
+    ) -> tuple[Station, ...]:
+        return self._stations.list_stations(
+            limit=limit,
+            offset=offset,
+            region_id=region_id,
+            bounds=bounds,
+        )
 
 
 class ListEnvironmentalVariables:

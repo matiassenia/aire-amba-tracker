@@ -46,6 +46,7 @@ from app.infrastructure.repositories import (
 from app.infrastructure.seed_data import SPATIAL_STATIONS
 from app.infrastructure.sources.demo import DEMO_SOURCE, DemoConnector
 from app.infrastructure.sources.waqi import WaqiConnector, waqi_source
+from app.infrastructure.waqi_client import WaqiStationRepository
 from app.measurements.service import ConnectorMeasurementProvider
 
 _zone_repository = InMemoryZoneRepository()
@@ -86,7 +87,16 @@ def get_geometry_repository() -> Generator[GeometryRepository]:
 
 
 def get_station_repository() -> Generator[StationRepository]:
-    if engine.dialect.name == "postgresql":
+    settings = get_settings()
+    if settings.station_data_source == "waqi":
+        yield WaqiStationRepository(
+            token=settings.waqi_api_token or settings.waqi_token,
+            base_url=settings.waqi_base_url,
+            bounds=settings.waqi_bounds,
+            timeout_seconds=settings.waqi_timeout_seconds,
+        )
+        return
+    if settings.station_data_source == "postgis":
         session = SessionLocal()
         try:
             yield SQLAlchemyStationRepository(session)
@@ -136,7 +146,7 @@ def get_source_connector() -> SourceConnector:
             raise ConfigurationError("demo mode cannot be enabled in production")
         return DemoConnector()
     return WaqiConnector(
-        token=settings.waqi_token,
+        token=settings.waqi_api_token or settings.waqi_token,
         bounds=settings.waqi_bounds,
         timeout_seconds=settings.waqi_timeout_seconds,
     )

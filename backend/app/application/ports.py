@@ -53,7 +53,13 @@ class ZoneRepository(ABC):
 
 class StationRepository(ABC):
     @abstractmethod
-    def list_stations(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
+    def list_stations(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        region_id: str | None = None,
+        bounds: str | None = None,
+    ) -> tuple[Station, ...]:
         raise NotImplementedError
 
 

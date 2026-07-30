@@ -1,5 +1,4 @@
 // StaticMapFallback - CSS/SVG fallback when Leaflet fails to load
-import { getAqiColorWithAlpha, getAqiLabel } from '@/lib/aqiUtils';
 import type { Zone } from '@/types/airQuality';
 import { cn } from '@/lib/utils';
 
@@ -41,9 +40,6 @@ export function StaticMapFallback({ zones, onZoneClick, selectedZoneId }: Static
         preserveAspectRatio="xMidYMid meet"
       >
         {zones.map(zone => {
-          const aqi = zone.estimatedAqi ?? 50;
-          const fillColor = getAqiColorWithAlpha(aqi, 0.4);
-          const strokeColor = getAqiColorWithAlpha(aqi, 0.8);
           const isSelected = zone.id === selectedZoneId;
 
           const points = zone.polygon
@@ -57,8 +53,8 @@ export function StaticMapFallback({ zones, onZoneClick, selectedZoneId }: Static
             <g key={zone.id} onClick={() => onZoneClick(zone)} className="cursor-pointer">
               <polygon
                 points={points}
-                fill={fillColor}
-                stroke={isSelected ? '#fff' : strokeColor}
+                fill="transparent"
+                stroke={isSelected ? '#fff' : 'rgba(255,255,255,0.45)'}
                 strokeWidth={isSelected ? 1 : 0.5}
                 className="transition-all duration-200 hover:opacity-80"
               />
@@ -69,7 +65,7 @@ export function StaticMapFallback({ zones, onZoneClick, selectedZoneId }: Static
                 dominantBaseline="middle"
                 className="fill-white/70 text-[3px] font-medium pointer-events-none"
               >
-                {aqi}
+                {zone.name}
               </text>
             </g>
           );
