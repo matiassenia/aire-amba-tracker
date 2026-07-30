@@ -21,7 +21,7 @@ interface LeafletMapProps {
   stations: Station[];
   zones: Zone[];
   scope: Scope;
-  averageAqi: number;
+  averageAqi: number | null;
   selectedZoneId?: string | null;
   onZoneClick: (zone: Zone) => void;
 }
@@ -49,11 +49,13 @@ export function LeafletMap({
 
   const heatPoints = useMemo(
     () =>
-      stations.map((s) => ({
-        lat: s.lat,
-        lon: s.lon,
-        aqi: s.aqi,
-      })),
+      stations
+        .filter((s) => s.aqi !== null)
+        .map((s) => ({
+          lat: s.lat,
+          lon: s.lon,
+          aqi: s.aqi,
+        })),
     [stations]
   );
 
@@ -86,7 +88,7 @@ export function LeafletMap({
         />
 
         {/* si ParticleLayer no tiene pane prop todavía, lo arreglamos abajo */}
-        <ParticleLayer averageAqi={averageAqi} particleCount={50}  />
+        <ParticleLayer averageAqi={averageAqi ?? 0} particleCount={50}  />
       </Pane>
 
       {/* ✅ Pane zonas: interactivo */}

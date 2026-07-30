@@ -21,7 +21,14 @@ export default function Index() {
   }, [selectedZoneId, zones, stations]);
 
   const summary = useMemo(() => {
-    const aqi = averageAqi ?? 0;
+    const aqi = averageAqi;
+    if (aqi === null) {
+      return {
+        aqi: null,
+        label: "Sin datos",
+        rec: "Estaciones disponibles, esperando mediciones AQI.",
+      };
+    }
     const contextual = getContextualMessage(aqi);
     return {
       aqi,
@@ -44,7 +51,9 @@ export default function Index() {
 
           {/* Mini resumen compacto (header) */}
           <div className="hidden items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 sm:flex">
-            <div className="text-sm font-semibold">AQI {summary.aqi}</div>
+            <div className="text-sm font-semibold">
+              {summary.aqi === null ? "AQI sin datos" : `AQI ${summary.aqi}`}
+            </div>
             <div className="text-xs text-white/60">{summary.label}</div>
           </div>
         </div>
@@ -63,7 +72,7 @@ export default function Index() {
                 }}
                 stations={stations}
                 zones={zones}
-                averageAqi={averageAqi ?? 0}
+                averageAqi={averageAqi}
                 lastUpdated={lastUpdated ?? null}
                 isUsingMockData={isUsingMockData}
                 isLoading={isLoading}
@@ -80,7 +89,7 @@ export default function Index() {
               <div className="flex items-baseline justify-between gap-3">
                 <div className="text-sm text-white/60">Estado general</div>
                 <div className="text-sm font-semibold">
-                  AQI {summary.aqi} · {summary.label}
+                  {summary.aqi === null ? "AQI sin datos" : `AQI ${summary.aqi}`} · {summary.label}
                 </div>
               </div>
               <div className="mt-2 text-sm">{summary.rec}</div>
@@ -113,7 +122,9 @@ export default function Index() {
                     {selectedSnapshot ? (
                       <>
                         <div className="text-3xl font-semibold">
-                          AQI {selectedSnapshot.aqi}
+                          {selectedSnapshot.aqi === null
+                            ? "AQI sin datos"
+                            : `AQI ${selectedSnapshot.aqi}`}
                         </div>
                         <div className="mt-1 text-sm text-white/70">
                           {selectedSnapshot.source === "REAL" ? "Real" : "Estimado"} ·{" "}
@@ -164,7 +175,9 @@ export default function Index() {
                   </p>
 
                   <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-3xl font-semibold">AQI {summary.aqi}</div>
+                    <div className="text-3xl font-semibold">
+                      {summary.aqi === null ? "AQI sin datos" : `AQI ${summary.aqi}`}
+                    </div>
                     <div className="mt-1 text-sm text-white/70">{summary.label}</div>
                     <div className="mt-3 text-sm">{summary.rec}</div>
                     <div className="mt-4 text-xs text-white/40">

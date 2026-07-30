@@ -115,7 +115,10 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
   const center = zone.centroid;
 
   const stationsByDistance: NearestStationInfo[] = stations
-    .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon) && Number.isFinite(s.aqi))
+    .filter(
+      (s): s is Station & { aqi: number } =>
+        Number.isFinite(s.lat) && Number.isFinite(s.lon) && s.aqi !== null && Number.isFinite(s.aqi)
+    )
     .map((s) => ({
       uid: s.uid,
       name: s.name,
@@ -128,13 +131,16 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
 
   const nearest_stations = stationsByDistance.slice(0, 3);
 
-  const stationsInside = stations.filter((s) =>
-    zone.polygon?.length ? pointInPolygon({ lat: s.lat, lon: s.lon }, zone.polygon) : false
+  const stationsInside = stations.filter(
+    (s): s is Station & { aqi: number } =>
+      s.aqi !== null &&
+      Number.isFinite(s.aqi) &&
+      (zone.polygon?.length ? pointInPolygon({ lat: s.lat, lon: s.lon }, zone.polygon) : false)
   );
 
   const source: DataSourceType = stationsInside.length > 0 ? "REAL" : "ESTIMATED";
 
-  let aqi = 0;
+  let aqi: number | null = null;
 
   if (source === "REAL") {
     const insideSorted = stationsInside
@@ -144,7 +150,7 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
       }))
       .sort((a, b) => a.d - b.d);
 
-    aqi = Math.round(insideSorted[0]?.station.aqi ?? 0);
+    aqi = Math.round(insideSorted[0].station.aqi);
 
     const confidence: ConfidenceLevel = "high";
 
@@ -161,7 +167,10 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
   }
 
   const samples: Sample[] = stations
-    .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon) && Number.isFinite(s.aqi))
+    .filter(
+      (s): s is Station & { aqi: number } =>
+        Number.isFinite(s.lat) && Number.isFinite(s.lon) && s.aqi !== null && Number.isFinite(s.aqi)
+    )
     .map((s) => ({ lat: s.lat, lon: s.lon, value: s.aqi }));
 
   const estimated = idwEstimate(center, samples, {
@@ -180,7 +189,7 @@ export function buildZoneSnapshot(zone: Zone, stations: Station[]): ZoneAqiSnaps
 
   const finalEstimated = estimated ?? fallbackAvg;
 
-  aqi = Math.round(finalEstimated ?? 0);
+  aqi = finalEstimated === null ? null : Math.round(finalEstimated);
 
   const d0 = nearest_stations[0]?.distance_km ?? 999;
   const confidence: ConfidenceLevel = estimated === null ? "low" : confidenceFromDistanceKm(d0);

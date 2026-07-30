@@ -39,6 +39,19 @@ def test_variables_endpoint_lists_environmental_variables() -> None:
     assert {variable["code"] for variable in response.json()} >= {"aqi", "pm25", "noise"}
 
 
+def test_stations_endpoint_lists_repository_stations() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/stations")
+
+    assert response.status_code == 200
+    stations = response.json()
+    assert len(stations) >= 1
+    assert {"uid", "name", "lat", "lon", "aqi", "dominant_variable", "time"} <= set(
+        stations[0]
+    )
+
+
 def test_history_endpoints_are_available_without_seeded_history() -> None:
     client = TestClient(create_app())
     start = "2026-07-29T00:00:00Z"

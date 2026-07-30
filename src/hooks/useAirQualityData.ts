@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { Station, Zone, AirQualityData, Scope } from '@/types/airQuality';
-import { MOCK_STATIONS, getMockAverageAqi } from '@/data/mockStations';
+import { MOCK_STATIONS } from '@/data/mockStations';
 import { getZonesForScope } from '@/data/zones';
 import { idwEstimate, type Sample } from '@/lib/idw';
 import { getConfidenceLevel } from '@/lib/aqiUtils';
@@ -14,24 +14,27 @@ interface CacheEntry {
 
 let stationCache: CacheEntry | null = null;
 
-async function fetchStationsFromApi(): Promise<Station[] | null> {
+async function fetchStationsFromApi(): Promise<Station[]> {
   if (stationCache && Date.now() - stationCache.timestamp < CACHE_TTL_MS) {
     return stationCache.data;
   }
 
   const stations = await fetchStations();
-  if (stations) {
-    stationCache = { data: stations, timestamp: Date.now() };
-  }
+  stationCache = { data: stations, timestamp: Date.now() };
 
   return stations;
+}
+
+function hasAqi(station: Station): station is Station & { aqi: number } {
+  return station.aqi !== null && Number.isFinite(station.aqi);
 }
 
 /**
  * Estimate AQI for zones using IDW interpolation
  */
 function estimateZoneAqi(zones: Zone[], stations: Station[]): Zone[] {
-  const samples: Sample[] = stations.map(s => ({
+  const measuredStations = stations.filter(hasAqi);
+  const samples: Sample[] = measuredStations.map(s => ({
     lat: s.lat,
     lon: s.lon,
     value: s.aqi,
@@ -47,7 +50,7 @@ function estimateZoneAqi(zones: Zone[], stations: Station[]): Zone[] {
 
     // Calculate distance to nearest station
     let nearestDist = Infinity;
-    for (const s of stations) {
+    for (const s of measuredStations) {
       const dLat = (zone.centroid.lat - s.lat) * 111;
       const dLon = (zone.centroid.lon - s.lon) * 111 * Math.cos(zone.centroid.lat * Math.PI / 180);
       const dist = Math.sqrt(dLat * dLat + dLon * dLon);
@@ -93,8 +96,8 @@ function filterStationsByScope(stations: Station[], scope: Scope): Station[] {
  * Main hook for air quality data
  */
 export function useAirQualityData(scope: Scope): AirQualityData & { isLoading: boolean } {
-  const [stations, setStations] = useState<Station[]>(MOCK_STATIONS);
-  const [isUsingMockData, setIsUsingMockData] = useState(true);
+  const [stations, setStations] = useState<Station[]>([]);
+  const [isUsingMockData, setIsUsingMockData] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date().toISOString());
 
@@ -104,15 +107,15 @@ export function useAirQualityData(scope: Scope): AirQualityData & { isLoading: b
 
     async function load() {
       setIsLoading(true);
-      const realStations = await fetchStationsFromApi();
-      
-      if (cancelled) return;
-
-      if (realStations && realStations.length > 0) {
+      try {
+        const realStations = await fetchStationsFromApi();
+        if (cancelled) return;
         setStations(realStations);
         setIsUsingMockData(false);
         setLastUpdated(new Date().toISOString());
-      } else {
+      } catch (error) {
+        console.error('Falling back to demo stations after backend request failed:', error);
+        if (cancelled) return;
         setStations(MOCK_STATIONS);
         setIsUsingMockData(true);
       }
@@ -136,10 +139,11 @@ export function useAirQualityData(scope: Scope): AirQualityData & { isLoading: b
     const filteredStations = filterStationsByScope(stations, scope);
     const zones = getZonesForScope(scope);
     const estimatedZones = estimateZoneAqi(zones, filteredStations);
+    const measuredStations = filteredStations.filter(hasAqi);
     
-    const averageAqi = filteredStations.length > 0
-      ? Math.round(filteredStations.reduce((acc, s) => acc + s.aqi, 0) / filteredStations.length)
-      : getMockAverageAqi();
+    const averageAqi = measuredStations.length > 0
+      ? Math.round(measuredStations.reduce((acc, s) => acc + s.aqi, 0) / measuredStations.length)
+      : null;
 
     return {
       stations: filteredStations,

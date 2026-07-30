@@ -1,5 +1,8 @@
 from threading import Lock
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.application.ports import (
     CountryRepository,
     EnvironmentalVariableRepository,
@@ -7,10 +10,12 @@ from app.application.ports import (
     MunicipalityRepository,
     ProvinceRepository,
     SourceStatusRepository,
+    StationRepository,
     TimeSeriesRepository,
     ZoneRepository,
     ZoneSnapshotRepository,
 )
+from app.db.models import StationOrm
 from app.domain.models import (
     Country,
     CursorPage,
@@ -20,6 +25,7 @@ from app.domain.models import (
     Municipality,
     Province,
     Source,
+    Station,
     TimeWindow,
     Zone,
     ZoneSnapshot,
@@ -29,6 +35,7 @@ from app.infrastructure.seed_data import (
     ENVIRONMENTAL_VARIABLES,
     MUNICIPALITIES,
     PROVINCES,
+    SPATIAL_STATIONS,
     ZONES,
 )
 
@@ -77,6 +84,46 @@ class InMemoryZoneRepository(ZoneRepository):
 
     def get_zone(self, zone_id: str) -> Zone | None:
         return next((zone for zone in self._zones if zone.id == zone_id), None)
+
+
+class InMemoryStationRepository(StationRepository):
+    def __init__(self, stations: tuple[Station, ...] = SPATIAL_STATIONS) -> None:
+        self._stations = stations
+
+    def list_stations(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
+        active_stations = tuple(station for station in self._stations if station.active)
+        return active_stations[offset : offset + limit]
+
+
+class SQLAlchemyStationRepository(StationRepository):
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def list_stations(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
+        statement = (
+            select(StationOrm)
+            .where(StationOrm.active.is_(True))
+            .order_by(StationOrm.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(self._station(row) for row in self._session.scalars(statement))
+
+    def _station(self, row: StationOrm) -> Station:
+        return Station(
+            id=row.id,
+            source_id=row.source_id,
+            external_id=row.external_id,
+            name=row.name,
+            lat=row.lat,
+            lon=row.lon,
+            country_id=row.country_id,
+            province_id=row.province_id,
+            municipality_id=row.municipality_id,
+            timezone=row.timezone,
+            metadata={str(key): str(value) for key, value in row.metadata_json.items()},
+            active=row.active,
+        )
 
 
 class InMemoryEnvironmentalVariableRepository(EnvironmentalVariableRepository):

@@ -4,7 +4,7 @@ import { getAqiColor, getAqiLabel, getContextualMessage } from '@/lib/aqiUtils';
 import { cn } from '@/lib/utils';
 
 interface AQISummaryCardProps {
-  averageAqi: number;
+  averageAqi: number | null;
   lastUpdated: string;
   isUsingMockData: boolean;
   isLoading?: boolean;
@@ -16,9 +16,12 @@ export function AQISummaryCard({
   isUsingMockData,
   isLoading 
 }: AQISummaryCardProps) {
-  const aqiColor = getAqiColor(averageAqi);
-  const aqiLabel = getAqiLabel(averageAqi);
-  const contextual = getContextualMessage(averageAqi);
+  const hasAqi = averageAqi !== null;
+  const aqiColor = hasAqi ? getAqiColor(averageAqi) : "#94A3B8";
+  const aqiLabel = hasAqi ? getAqiLabel(averageAqi) : "Sin datos";
+  const contextual = hasAqi
+    ? getContextualMessage(averageAqi)
+    : { emoji: "", message: "Hay estaciones disponibles, pero todavía no hay mediciones AQI." };
 
   // Format last updated time
   const formatTime = (iso: string) => {
@@ -47,7 +50,7 @@ export function AQISummaryCard({
           className="text-5xl font-light tabular-nums"
           style={{ color: aqiColor }}
         >
-          {averageAqi}
+          {hasAqi ? averageAqi : "--"}
         </span>
         <div className="flex flex-col">
           <span 

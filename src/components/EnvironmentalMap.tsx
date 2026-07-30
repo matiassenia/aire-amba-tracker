@@ -62,7 +62,7 @@ type EnvironmentalMapProps = {
   stations: Station[];
   zones: Zone[];
 
-  averageAqi: number;
+  averageAqi: number | null;
   lastUpdated?: string | null;
   isUsingMockData?: boolean;
   isLoading?: boolean;
@@ -153,7 +153,7 @@ export function EnvironmentalMap({
                       {selectedSnapshot.zone_name}
                     </div>
                     <div className="mt-1 text-3xl font-bold text-white">
-                      AQI {selectedSnapshot.aqi}
+                      {selectedSnapshot.aqi === null ? "AQI sin datos" : `AQI ${selectedSnapshot.aqi}`}
                     </div>
                     <div className="mt-1 text-sm text-white/70">
                       {selectedSnapshot.source === "REAL" ? "Real" : "Estimado"} ·{" "}

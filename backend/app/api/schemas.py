@@ -86,7 +86,7 @@ class StationDto(BaseModel):
     name: str
     lat: float
     lon: float
-    aqi: int = 0
+    aqi: int | None = None
     dominant_variable: str | None = None
     time: str | None = None
 

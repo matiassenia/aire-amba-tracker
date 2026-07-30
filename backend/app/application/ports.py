@@ -51,6 +51,12 @@ class ZoneRepository(ABC):
         raise NotImplementedError
 
 
+class StationRepository(ABC):
+    @abstractmethod
+    def list_stations(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
+        raise NotImplementedError
+
+
 class GeometryRepository(ABC):
     @abstractmethod
     def get_geometry(self, owner_type: str, owner_id: str) -> GeometryRecord | None:

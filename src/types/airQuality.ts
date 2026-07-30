@@ -61,7 +61,7 @@ export type NearestStationInfo = {
 export type ZoneAqiSnapshot = {
   zone_id: string;
   zone_name: string;
-  aqi: number;
+  aqi: number | null;
   source: DataSourceType;
   confidence: ConfidenceLevel;
   nearest_stations: NearestStationInfo[];
@@ -72,7 +72,7 @@ export type ZoneAqiSnapshot = {
 export interface AirQualityData {
   stations: Station[];
   zones: Zone[];
-  averageAqi: number;
+  averageAqi: number | null;
   lastUpdated: string;
   isUsingMockData: boolean;
 }

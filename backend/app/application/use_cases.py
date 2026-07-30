@@ -4,6 +4,7 @@ from app.application.ports import (
     MeasurementRepository,
     SnapshotCalculator,
     SourceStatusRepository,
+    StationRepository,
     TimeSeriesRepository,
     ZoneRepository,
     ZoneSnapshotRepository,
@@ -43,11 +44,11 @@ class GetZone:
 
 
 class ListStations:
-    def __init__(self, measurements: MeasurementProvider) -> None:
-        self._measurements = measurements
+    def __init__(self, stations: StationRepository) -> None:
+        self._stations = stations
 
-    async def execute(self) -> tuple[Station, ...]:
-        return await self._measurements.latest_stations()
+    def execute(self, limit: int = 100, offset: int = 0) -> tuple[Station, ...]:
+        return self._stations.list_stations(limit=limit, offset=offset)
 
 
 class ListEnvironmentalVariables:

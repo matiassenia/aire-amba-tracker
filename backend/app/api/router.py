@@ -271,17 +271,12 @@ async def get_zone_current(
 
 
 @api_router.get("/stations", response_model=list[StationDto])
-async def list_stations(use_case: ListStationsDep) -> list[StationDto]:
-    stations = await use_case.execute()
-    return [
-        StationDto(
-            uid=int(station.external_id),
-            name=station.name,
-            lat=station.lat,
-            lon=station.lon,
-        )
-        for station in stations
-    ]
+async def list_stations(
+    use_case: ListStationsDep,
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[StationDto]:
+    return [_station_dto(station) for station in use_case.execute(limit=limit, offset=offset)]
 
 
 @api_router.get("/stations/near", response_model=list[NearestStationResultDto])
