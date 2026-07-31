@@ -3,26 +3,18 @@ import { DivIcon } from "leaflet";
 import { CircleMarker, MapContainer, Marker, Pane, Popup, TileLayer, useMap } from "react-leaflet";
 import { HeatLayer } from "@/components/HeatLayer";
 import { ZonePolygons } from "@/components/map/ZonePolygons";
+import { AQI_HEAT_GRADIENT } from "@/lib/aqiHeatScale";
 import type { Region, Station, Zone } from "@/types/airQuality";
 import {
+  heatLayerConfig,
   heatPointsForPollutant,
   pollutantValue,
-  shouldShowHeatmap,
   type PollutantKey,
 } from "@/lib/pollutantHeat";
 import { clusterStations, shouldClusterStations } from "@/lib/stationClusters";
 import { useEffect, useMemo, useState } from "react";
 import { useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-
-const HEAT_GRADIENT = {
-  0: "rgba(30,64,175,0.18)",
-  0.24: "#2563eb",
-  0.46: "#22d3ee",
-  0.64: "#14b8a6",
-  0.82: "#fbbf24",
-  1: "#fb7185",
-} satisfies Record<number, string>;
 
 interface LeafletMapProps {
   stations: Station[];
@@ -54,6 +46,45 @@ function ZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void })
   return null;
 }
 
+// Diagnóstico temporal SOLO en desarrollo (se elimina del build de
+// producción porque import.meta.env.DEV es false en modo production).
+function HeatDiagnostics({
+  regionId,
+  zoom,
+  heatPoints,
+  config,
+}: {
+  regionId: string;
+  zoom: number;
+  heatPoints: { value: number; intensity: number }[];
+  config: ReturnType<typeof heatLayerConfig>;
+}) {
+  if (!import.meta.env.DEV) return null;
+  const values = heatPoints.map((p) => p.value);
+  const intensities = heatPoints.map((p) => p.intensity);
+  return (
+    <div className="pointer-events-none absolute right-2 top-2 z-[1000] max-w-[16rem] rounded-lg border border-white/10 bg-slate-950/85 px-2 py-1.5 font-mono text-[10px] leading-snug text-white/85 backdrop-blur">
+      <div>region: {regionId} · zoom: {zoom}</div>
+      <div>points: {heatPoints.length}</div>
+      <div>heatmap: {config ? "sí" : "no"}</div>
+      {config && (
+        <div>
+          radius: {config.radius} · blur: {config.blur}
+          <br />
+          minOpacity: {config.minOpacity} · maxZoom: {config.maxZoom}
+        </div>
+      )}
+      {heatPoints.length > 0 && (
+        <div>
+          AQI: {Math.min(...values)}–{Math.max(...values)}
+          <br />
+          peso: {Math.min(...intensities).toFixed(3)}–{Math.max(...intensities).toFixed(3)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LeafletMap({
   stations,
   zones,
@@ -67,13 +98,17 @@ export function LeafletMap({
   const [zoom, setZoom] = useState(region?.default_zoom ?? 4);
   const center = region?.center ?? [-38.4, -63.6];
   const defaultZoom = region?.default_zoom ?? 4;
+  const regionId = region?.id ?? "argentina";
 
   const heatPoints = useMemo(
     () => heatPointsForPollutant(stations, selectedPollutant),
     [stations, selectedPollutant]
   );
-  const showHeatmap = shouldShowHeatmap(region?.id ?? "argentina", zoom, heatPoints.length);
-  const useClusters = shouldClusterStations(region?.id ?? "argentina", zoom, stations.length);
+  const heatConfig = useMemo(
+    () => heatLayerConfig(regionId, heatPoints.length, zoom, region?.default_zoom ?? 9),
+    [regionId, heatPoints.length, zoom, region?.default_zoom]
+  );
+  const useClusters = shouldClusterStations(regionId, zoom, stations.length);
 
   const clusters = useMemo(() => {
     if (!useClusters) return [];
@@ -95,99 +130,104 @@ export function LeafletMap({
   }, [clusters]);
 
   return (
-    <MapContainer
-      center={[center[0], center[1]]}
-      zoom={defaultZoom}
-      className="h-full w-full"
-      zoomControl={false}
-      attributionControl={false}
-      preferCanvas
-    >
-      <MapCameraController region={region} />
-      <ZoomTracker onZoomChange={setZoom} />
+    <div className="relative h-full w-full">
+      <MapContainer
+        center={[center[0], center[1]]}
+        zoom={defaultZoom}
+        className="h-full w-full"
+        zoomControl={false}
+        attributionControl={false}
+        preferCanvas
+      >
+        <MapCameraController region={region} />
+        <ZoomTracker onZoomChange={setZoom} />
 
-      <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        subdomains="abcd"
-      />
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+        />
 
-      {/* Visual effects pane: no pointer events. */}
-      <Pane name="fx" style={{ zIndex: 450, pointerEvents: "none" }}>
-        {showHeatmap && (
-          <HeatLayer
-            points={heatPoints}
-            radius={region?.id === "argentina" ? 22 : 50}
-            blur={region?.id === "argentina" ? 36 : 58}
-            maxZoom={14}
-            minOpacity={0.06}
-            gradient={HEAT_GRADIENT}
-            pane="fx"
-          />
-        )}
-      </Pane>
+        {/* Visual effects pane: no pointer events. */}
+        <Pane name="fx" style={{ zIndex: 450, pointerEvents: "none" }}>
+          {heatConfig && (
+            <HeatLayer
+              points={heatPoints}
+              radius={heatConfig.radius}
+              blur={heatConfig.blur}
+              maxZoom={heatConfig.maxZoom}
+              minOpacity={heatConfig.minOpacity}
+              max={1}
+              gradient={AQI_HEAT_GRADIENT}
+              pane="fx"
+            />
+          )}
+        </Pane>
 
-      {/* Approximate AMBA reference zones. */}
-      <Pane name="zones" style={{ zIndex: 650, pointerEvents: "auto" }}>
-        <ZonePolygons zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId} />
-      </Pane>
+        {/* Approximate AMBA reference zones. */}
+        <Pane name="zones" style={{ zIndex: 650, pointerEvents: "auto" }}>
+          <ZonePolygons zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId} />
+        </Pane>
 
-      <Pane name="stations" style={{ zIndex: 700, pointerEvents: "auto" }}>
-        {useClusters
-          ? clusters.map((cluster) => (
-              <Marker
-                key={cluster.id}
-                position={[cluster.lat, cluster.lon]}
-                icon={clusterIcons.get(cluster.id)}
+        <Pane name="stations" style={{ zIndex: 700, pointerEvents: "auto" }}>
+          {useClusters
+            ? clusters.map((cluster) => (
+                <Marker
+                  key={cluster.id}
+                  position={[cluster.lat, cluster.lon]}
+                  icon={clusterIcons.get(cluster.id)}
+                >
+                  <Popup>
+                    <div className="min-w-44 text-white">
+                      <div className="font-semibold">{cluster.stations.length} estaciones</div>
+                      <div className="mt-1 text-sm text-white/70">Agrupadas para la vista nacional.</div>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))
+            : stations.map((station) => {
+            const value = pollutantValue(station, selectedPollutant);
+            const hasValue = value !== null;
+            const isSelected = selectedStationUid === station.uid;
+
+            return (
+              <CircleMarker
+                key={station.uid}
+                center={[station.lat, station.lon]}
+                radius={isSelected ? 8 : hasValue ? 6 : 4.5}
+                pathOptions={{
+                  color: isSelected ? "#ffffff" : hasValue ? "rgba(226,246,255,0.9)" : "rgba(255,255,255,0.42)",
+                  fillColor: hasValue ? "#67e8f9" : "#64748b",
+                  fillOpacity: hasValue ? 0.82 : 0.42,
+                  opacity: hasValue ? 0.95 : 0.58,
+                  weight: isSelected ? 2.5 : 1.5,
+                  className: hasValue ? "station-marker station-marker-active" : "station-marker",
+                }}
+                eventHandlers={{
+                  click: () => onStationSelect(station),
+                }}
               >
                 <Popup>
-                  <div className="min-w-44 text-white">
-                    <div className="font-semibold">{cluster.stations.length} estaciones</div>
-                    <div className="mt-1 text-sm text-white/70">Agrupadas para la vista nacional.</div>
+                  <div className="min-w-52 text-white">
+                    <div className="font-semibold">{station.name}</div>
+                    <div className="mt-1 text-sm text-white/70">
+                      {hasValue ? `Valor informado: ${value}` : "Sin datos para el contaminante activo"}
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-3 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-sm text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
+                      onClick={() => onStationSelect(station)}
+                    >
+                      Ver detalle
+                    </button>
                   </div>
                 </Popup>
-              </Marker>
-            ))
-          : stations.map((station) => {
-          const value = pollutantValue(station, selectedPollutant);
-          const hasValue = value !== null;
-          const isSelected = selectedStationUid === station.uid;
+              </CircleMarker>
+            );
+          })}
+        </Pane>
+      </MapContainer>
 
-          return (
-            <CircleMarker
-              key={station.uid}
-              center={[station.lat, station.lon]}
-              radius={isSelected ? 8 : hasValue ? 6 : 4.5}
-              pathOptions={{
-                color: isSelected ? "#ffffff" : hasValue ? "rgba(226,246,255,0.9)" : "rgba(255,255,255,0.42)",
-                fillColor: hasValue ? "#67e8f9" : "#64748b",
-                fillOpacity: hasValue ? 0.82 : 0.42,
-                opacity: hasValue ? 0.95 : 0.58,
-                weight: isSelected ? 2.5 : 1.5,
-                className: hasValue ? "station-marker station-marker-active" : "station-marker",
-              }}
-              eventHandlers={{
-                click: () => onStationSelect(station),
-              }}
-            >
-              <Popup>
-                <div className="min-w-52 text-white">
-                  <div className="font-semibold">{station.name}</div>
-                  <div className="mt-1 text-sm text-white/70">
-                    {hasValue ? `Valor informado: ${value}` : "Sin datos para el contaminante activo"}
-                  </div>
-                  <button
-                    type="button"
-                    className="mt-3 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-sm text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
-                    onClick={() => onStationSelect(station)}
-                  >
-                    Ver detalle
-                  </button>
-                </div>
-              </Popup>
-            </CircleMarker>
-          );
-        })}
-      </Pane>
-    </MapContainer>
+      <HeatDiagnostics regionId={regionId} zoom={zoom} heatPoints={heatPoints} config={heatConfig} />
+    </div>
   );
 }

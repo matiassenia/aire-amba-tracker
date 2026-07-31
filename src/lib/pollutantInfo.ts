@@ -10,6 +10,10 @@ export type PollutantInfo = {
   waqiNote: string;
   visualColor: string;
   ariaLabel: string;
+  whatYouSee: string;
+  causes: string[];
+  healthNote: string;
+  stationExplanation: string;
 };
 
 export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
@@ -24,6 +28,19 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#38bdf8",
     ariaLabel: "Informacion sobre PM2.5, material particulado fino",
+    whatYouSee:
+      "Este mapa muestra el índice de calidad del aire informado para PM2.5 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+    causes: [
+      "Vehículos",
+      "Motores diésel",
+      "Quema de biomasa",
+      "Incendios",
+      "Industrias",
+      "Calefacción residencial",
+    ],
+    healthNote: "Las partículas finas pueden ingresar profundamente en los pulmones.",
+    stationExplanation:
+      "PM2.5 elevado suele asociarse a motores diésel, quema de biomasa o actividad industrial cercana.",
   },
   pm10: {
     key: "pm10",
@@ -36,6 +53,12 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#f59e0b",
     ariaLabel: "Informacion sobre PM10, material particulado grueso",
+    whatYouSee:
+      "Este mapa muestra el índice de calidad del aire informado para PM10 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+    causes: ["Polvo", "Construcción", "Canteras", "Tránsito", "Actividad industrial"],
+    healthNote: "Puede afectar las vías respiratorias.",
+    stationExplanation:
+      "PM10 elevado suele asociarse a polvo, obras en construcción o tránsito intenso cercano.",
   },
   no2: {
     key: "no2",
@@ -48,6 +71,12 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#fb7185",
     ariaLabel: "Informacion sobre NO2, dioxido de nitrogeno",
+    whatYouSee:
+      "Este mapa muestra el índice de calidad del aire informado para NO2 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+    causes: ["Motores de combustión", "Tránsito intenso", "Industrias", "Centrales térmicas"],
+    healthNote: "Irrita el sistema respiratorio.",
+    stationExplanation:
+      "NO2 elevado suele asociarse a motores de combustión o tránsito intenso cercano.",
   },
   o3: {
     key: "o3",
@@ -60,6 +89,17 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#a78bfa",
     ariaLabel: "Informacion sobre O3, ozono troposferico",
+    whatYouSee:
+      "Este mapa muestra el índice de calidad del aire informado para O3 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+    causes: [
+      "Contaminante secundario",
+      "Reacciones fotoquímicas",
+      "Radiación solar",
+      "Tránsito urbano",
+    ],
+    healthNote: "Puede generar irritación pulmonar.",
+    stationExplanation:
+      "O3 elevado suele asociarse a reacciones fotoquímicas con luz solar intensa y tránsito urbano.",
   },
   so2: {
     key: "so2",
@@ -72,6 +112,12 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#22c55e",
     ariaLabel: "Informacion sobre SO2, dioxido de azufre",
+    whatYouSee:
+      "Este mapa muestra el índice de calidad del aire informado para SO2 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+    causes: ["Combustibles fósiles", "Refinerías", "Procesos industriales", "Generación eléctrica"],
+    healthNote: "Puede agravar enfermedades respiratorias.",
+    stationExplanation:
+      "SO2 elevado suele asociarse a combustibles fósiles o actividad industrial cercana.",
   },
   co: {
     key: "co",
@@ -84,6 +130,20 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#f97316",
     ariaLabel: "Informacion sobre CO, monoxido de carbono",
+    whatYouSee:
+      "Este mapa muestra el índice de calidad del aire informado para CO e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+    causes: [
+      "Tránsito vehicular",
+      "Combustión incompleta",
+      "Calderas",
+      "Generadores",
+      "Procesos industriales",
+      "Incendios y quemas",
+      "Condiciones meteorológicas",
+    ],
+    healthNote: "Puede provocar dolores de cabeza, mareos y fatiga en concentraciones elevadas.",
+    stationExplanation:
+      "CO elevado suele asociarse a tránsito intenso, combustión incompleta o actividad industrial cercana.",
   },
 };
 

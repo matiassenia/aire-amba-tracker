@@ -9,45 +9,20 @@ import type {
 
 import { haversineDistanceKm, pointInPolygon } from "@/lib/geo/geojson";
 import { idwEstimate, type Sample } from "@/lib/idw";
-
-
-
+import { aqiColor, aqiLabel } from "@/lib/aqiHeatScale";
 
 // -----------------------------
 // UI helpers (colors, labels, copy)
 // -----------------------------
 
+// Delegamos color y label a la fuente única de categorías en aqiHeatScale:
+// la clasificación y el significado del color dependen del AQI absoluto.
 export function getAqiColor(aqi: number): string {
-  if (aqi <= 50) return "#4ADE80";
-  if (aqi <= 100) return "#FBBF24";
-  if (aqi <= 150) return "#FB923C";
-  if (aqi <= 200) return "#F87171";
-  if (aqi <= 300) return "#A78BFA";
-  return "#7F1D1D";
+  return aqiColor(aqi);
 }
-
-export function getAqiColorWithAlpha(aqi: number, alpha = 0.25): string {
-  const hex = getAqiColor(aqi);
-
-  // hex esperado: #RRGGBB
-  if (!hex.startsWith("#") || hex.length !== 7) return `rgba(255,255,255,${alpha})`;
-
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-
-  const a = Math.max(0, Math.min(1, alpha));
-  return `rgba(${r}, ${g}, ${b}, ${a})`;
-}
-
 
 export function getAqiLabel(aqi: number): string {
-  if (aqi <= 50) return "Bueno";
-  if (aqi <= 100) return "Moderado";
-  if (aqi <= 150) return "Dañino para sensibles";
-  if (aqi <= 200) return "Dañino";
-  if (aqi <= 300) return "Muy dañino";
-  return "Peligroso";
+  return aqiLabel(aqi);
 }
 
 export function getContextualMessage(aqi: number): { emoji: string; message: string } {
@@ -82,18 +57,6 @@ export function formatPollutant(p?: string): string {
   if (key === "co") return "CO";
   return p.toUpperCase();
 }
-
-
-export const AQI_LEGEND = [
-  { max: 50, label: "Bueno", color: getAqiColor(50) },
-  { max: 100, label: "Moderado", color: getAqiColor(100) },
-  { max: 150, label: "Sensibles", color: getAqiColor(150) },
-  { max: 200, label: "Dañino", color: getAqiColor(200) },
-  { max: 300, label: "Muy dañino", color: getAqiColor(300) },
-  { max: Infinity, label: "Peligroso", color: getAqiColor(999) },
-] as const;
-
-
 
 export function getConfidenceLevel(distance_km: number): ConfidenceLevel {
   if (distance_km <= 5) return "high";

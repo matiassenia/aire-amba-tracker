@@ -19,23 +19,25 @@ export function HeatLayer({
   blur = 30,
   maxZoom = 13,
   minOpacity = 0.18,
+  max = 1,
   gradient,
-  pane = "fx", // ✅ pane target
+  pane = "fx",
 }: {
   points: HeatPoint[];
   radius?: number;
   blur?: number;
   maxZoom?: number;
   minOpacity?: number;
+  max?: number;
   gradient?: Record<number, string>;
   pane?: string;
 }) {
   const map = useMap();
 
   const heatData = useMemo(() => {
-    return points.map(
-      (p) => [p.lat, p.lon, p.intensity] as [number, number, number]
-    );
+    return points
+      .filter((p) => Number.isFinite(p.intensity) && p.intensity > 0)
+      .map((p) => [p.lat, p.lon, Math.min(p.intensity, 1)] as [number, number, number]);
   }, [points]);
 
   useEffect(() => {
@@ -48,7 +50,8 @@ export function HeatLayer({
       blur,
       maxZoom,
       minOpacity,
-      pane, // ✅ importantísimo: lo manda a ese pane
+      max,
+      pane, // ✅ pane target
       ...(gradient ? { gradient } : {}),
     });
 
@@ -63,7 +66,7 @@ export function HeatLayer({
     return () => {
       map.removeLayer(layer);
     };
-  }, [map, heatData, radius, blur, maxZoom, minOpacity, gradient, pane]);
+  }, [map, heatData, radius, blur, maxZoom, minOpacity, max, gradient, pane]);
 
   return null;
 }

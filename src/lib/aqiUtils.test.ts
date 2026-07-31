@@ -13,11 +13,14 @@ describe("AQI presentation helpers", () => {
   it("maps AQI values to expected labels and colors", () => {
     expect(getAqiLabel(25)).toBe("Bueno");
     expect(getAqiLabel(75)).toBe("Moderado");
-    expect(getAqiLabel(125)).toBe("Dañino para sensibles");
+    expect(getAqiLabel(125)).toBe("Dañino para grupos sensibles");
     expect(getAqiLabel(175)).toBe("Dañino");
     expect(getAqiLabel(250)).toBe("Muy dañino");
     expect(getAqiLabel(350)).toBe("Peligroso");
-    expect(getAqiColor(25)).toBe("#4ADE80");
+    expect(getAqiColor(25)).toBe("#22c55e");
+    expect(getAqiColor(75)).toBe("#eab308");
+    expect(getAqiColor(125)).toBe("#f97316");
+    expect(getAqiColor(350)).toBe("#ec4899");
   });
 
   it("returns contextual messages without changing numeric data", () => {

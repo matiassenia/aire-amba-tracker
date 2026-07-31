@@ -12,4 +12,20 @@ describe("POLLUTANT_INFO", () => {
       expect(info.ariaLabel).toBeTruthy();
     }
   });
+
+  it("provides heatmap and station explanation copy for every pollutant", () => {
+    for (const info of Object.values(POLLUTANT_INFO)) {
+      expect(info.whatYouSee).toContain(info.shortName);
+      expect(info.whatYouSee).toContain("índice de calidad del aire informado para");
+      expect(info.whatYouSee).toContain("interpolado visualmente entre las estaciones disponibles");
+      expect(info.whatYouSee).not.toContain("concentración");
+      expect(info.causes.length).toBeGreaterThanOrEqual(4);
+      for (const cause of info.causes) {
+        expect(cause.trim()).toBeTruthy();
+      }
+      expect(info.healthNote).toBeTruthy();
+      expect(info.stationExplanation).toContain(info.shortName);
+      expect(info.stationExplanation).toContain("suele asociarse");
+    }
+  });
 });

@@ -12,6 +12,7 @@ import {
   pollutantValue,
   type PollutantKey,
 } from "@/lib/pollutantHeat";
+import { aqiHeatGradientCss, AQI_HEAT_LEGEND } from "@/lib/aqiHeatScale";
 import { pollutantInfo } from "@/lib/pollutantInfo";
 import { stationFreshness } from "@/lib/stationFreshness";
 
@@ -125,6 +126,19 @@ function StationPanel({
         </div>
       </div>
 
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
+          Posibles fuentes habituales
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-white/78">
+          {pollutantInfo(selectedPollutant).stationExplanation}
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-white/55">
+          Estas son fuentes habituales asociadas al contaminante. La plataforma no determina la
+          causa específica de esta medición.
+        </p>
+      </div>
+
       <div className="mt-3 flex flex-wrap gap-2 text-sm">
         <span
           className={cn(
@@ -193,7 +207,7 @@ function PollutantInfoPanel({
   return (
     <section
       aria-label={`Información sobre ${info.shortName}`}
-      className="fixed inset-x-3 bottom-20 z-40 rounded-[1.65rem] border border-white/10 bg-slate-950/82 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in md:absolute md:bottom-auto md:left-5 md:right-auto md:top-28 md:w-[23rem]"
+      className="fixed inset-x-3 bottom-20 z-40 max-h-[62vh] overflow-y-auto rounded-[1.65rem] border border-white/10 bg-slate-950/82 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in md:absolute md:bottom-auto md:left-5 md:right-auto md:top-28 md:w-[23rem]"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -211,18 +225,48 @@ function PollutantInfoPanel({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-white/78">{info.description}</p>
-      <div className="mt-4 grid gap-3 text-sm text-white/72">
-        <p>
-          <span className="font-medium text-white/90">Fuentes habituales: </span>
-          {info.commonSources}
+
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
+          ¿Qué estás viendo?
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-white/78">{info.whatYouSee}</p>
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
+          ¿A qué se debe?
+        </div>
+        <ul className="mt-2 grid gap-1.5 text-sm text-white/75">
+          {info.causes.map((cause) => (
+            <li key={cause} className="flex items-start gap-2">
+              <span
+                className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: info.visualColor }}
+              />
+              {cause}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-xs leading-relaxed text-white/55">
+          Estas son fuentes habituales asociadas al contaminante. La plataforma no determina la
+          causa específica de esta medición.
         </p>
-        <p>
-          <span className="font-medium text-white/90">Por qué se monitorea: </span>
-          {info.whyMonitored}
+        <p className="mt-2 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90">
+          {info.healthNote}
         </p>
       </div>
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/75">
+
+      <div className="mt-3 rounded-2xl border border-cyan-200/15 bg-cyan-200/8 px-3 py-2 text-sm text-cyan-50/85">
+        Visualización interpolada a partir de las estaciones disponibles. Las áreas entre
+        estaciones no representan mediciones directas.
+        <p className="mt-1.5 text-xs leading-relaxed text-cyan-50/70">
+          La intensidad visual se amplifica para facilitar la lectura del mapa; la categoría
+          indicada corresponde al índice AQI informado.
+        </p>
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/75">
         Disponible en {availableCount} estaciones de esta región.
       </div>
     </section>
@@ -231,25 +275,33 @@ function PollutantInfoPanel({
 
 function IntensityLegend({ label, pointCount }: { label: string; pointCount: number }) {
   return (
-    <div className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-2 text-white shadow-2xl backdrop-blur-xl">
+    <div className="max-w-[min(92vw,26rem)] rounded-2xl border border-white/10 bg-slate-950/55 px-3 py-2 text-white shadow-2xl backdrop-blur-xl">
       <div className="flex items-center gap-3">
         <span className="hidden text-xs font-medium text-white/70 sm:inline">{label}</span>
         <div
-          className="h-2 w-28 rounded-full sm:w-36"
-          style={{
-            background:
-              "linear-gradient(90deg, rgba(30,64,175,0.45), rgba(34,211,238,0.72), rgba(20,184,166,0.78), rgba(251,191,36,0.72), rgba(251,113,133,0.74))",
-          }}
+          className="h-2.5 w-28 rounded-full sm:w-40"
+          style={{ background: aqiHeatGradientCss() }}
         />
         <span className="text-xs text-white/65">{pointCount} est.</span>
       </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {AQI_HEAT_LEGEND.map((item) => (
+          <span key={item.label} className="flex items-center gap-1 text-[10px] leading-none text-white/60">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+            {item.label}
+          </span>
+        ))}
+      </div>
       <div className="mt-1 flex justify-between gap-3 text-[11px] text-white/55">
-        <span>menor</span>
-        <span>media</span>
+        <span>menor intensidad</span>
         <span>mayor intensidad</span>
       </div>
+      <p className="mt-1 max-w-[min(92vw,24rem)] text-[10px] leading-snug text-white/45">
+        Interpolación visual entre estaciones; las áreas intermedias no son mediciones directas.
+      </p>
       <p className="sr-only">
-        Intensidad relativa de los valores informados por las estaciones disponibles.
+        Escala de calidad del aire para {label}: de menor a mayor intensidad, Bueno, Moderado,
+        Sensibles, Dañino, Muy dañino y Peligroso.
       </p>
     </div>
   );
@@ -271,7 +323,7 @@ export function EnvironmentalMap({
 }: EnvironmentalMapProps) {
   const [selectedPollutant, setSelectedPollutant] = React.useState<PollutantKey>("pm10");
   const [selectedStation, setSelectedStation] = React.useState<Station | null>(null);
-  const [infoOpen, setInfoOpen] = React.useState(false);
+  const [infoOpen, setInfoOpen] = React.useState(true);
 
   const fallbackMap = (
     <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Station } from "@/types/airQuality";
+import { aqiToVisualHeatWeight } from "./aqiHeatScale";
 import {
   availablePollutants,
+  heatLayerConfig,
   heatPointsForPollutant,
-  normalizePollutantIntensity,
   pollutantValue,
   shouldShowHeatmap,
 } from "./pollutantHeat";
@@ -31,6 +32,7 @@ const stations: Station[] = [
     lat: -34.8,
     lon: -58.6,
     aqi: null,
+    iaqi: { pm10: NaN },
   },
 ];
 
@@ -43,6 +45,15 @@ describe("pollutant heat helpers", () => {
     expect(points[0].station.uid).toBe(1);
   });
 
+  it("never generates a heat point for NaN values", () => {
+    expect(heatPointsForPollutant(stations, "pm10")).toHaveLength(1);
+
+    const nanOnly: Station[] = [
+      { uid: 9, name: "NaN", lat: -34, lon: -58, aqi: null, iaqi: { pm10: NaN } },
+    ];
+    expect(heatPointsForPollutant(nanOnly, "pm10")).toEqual([]);
+  });
+
   it("preserves real station coordinates in heat points", () => {
     const [point] = heatPointsForPollutant(stations, "co");
 
@@ -50,10 +61,39 @@ describe("pollutant heat helpers", () => {
     expect(point.lon).toBe(-58.5);
   });
 
-  it("normalizes intensity by selected pollutant and clamps high values", () => {
-    expect(normalizePollutantIntensity(20, "pm10")).toBeGreaterThan(0);
-    expect(normalizePollutantIntensity(20, "pm10")).toBeLessThan(1);
-    expect(normalizePollutantIntensity(999, "pm10")).toBe(1);
+  it("uses the perceptual absolute weight instead of value / 300", () => {
+    const [point] = heatPointsForPollutant(stations, "pm10");
+
+    expect(point.intensity).toBe(aqiToVisualHeatWeight(22));
+    expect(point.intensity).toBeGreaterThan(22 / 300);
+  });
+
+  it("does not escalate the highest value of a small set to the top of the scale", () => {
+    const lowSet: Station[] = [
+      { uid: 1, name: "low", lat: -34.6, lon: -58.4, aqi: null, iaqi: { pm10: 60 } },
+    ];
+
+    const [point] = heatPointsForPollutant(lowSet, "pm10");
+
+    expect(point.intensity).toBe(aqiToVisualHeatWeight(60));
+    expect(point.intensity).toBeLessThan(1);
+    expect(point.intensity).toBeLessThan(aqiToVisualHeatWeight(100));
+  });
+
+  it("keeps intensity comparable across sets of different sizes", () => {
+    const small: Station[] = [
+      { uid: 1, name: "a", lat: -34.6, lon: -58.4, aqi: null, iaqi: { pm10: 120 } },
+    ];
+    const large: Station[] = [
+      { uid: 1, name: "a", lat: -34.6, lon: -58.4, aqi: null, iaqi: { pm10: 120 } },
+      { uid: 2, name: "b", lat: -34.7, lon: -58.5, aqi: null, iaqi: { pm10: 20 } },
+      { uid: 3, name: "c", lat: -34.8, lon: -58.6, aqi: null, iaqi: { pm10: 30 } },
+    ];
+
+    const smallIntensity = heatPointsForPollutant(small, "pm10")[0].intensity;
+    const largeIntensity = heatPointsForPollutant(large, "pm10")[0].intensity;
+
+    expect(smallIntensity).toBe(largeIntensity);
   });
 
   it("returns no points for a pollutant without data", () => {
@@ -64,11 +104,80 @@ describe("pollutant heat helpers", () => {
   it("detects available pollutants from partial station data", () => {
     expect(availablePollutants(stations)).toEqual(["pm10", "co"]);
   });
+});
 
-  it("hides national heatmap until zoom and density are sufficient", () => {
-    expect(shouldShowHeatmap("argentina", 4, 12)).toBe(false);
-    expect(shouldShowHeatmap("argentina", 7, 3)).toBe(false);
-    expect(shouldShowHeatmap("argentina", 7, 4)).toBe(true);
+describe("shouldShowHeatmap", () => {
+  it("never shows a heatmap without at least one point", () => {
+    expect(shouldShowHeatmap("amba", 9, 0)).toBe(false);
+    expect(shouldShowHeatmap("argentina", 9, 0)).toBe(false);
+  });
+
+  it("shows a local thermal halo with a single station", () => {
+    expect(shouldShowHeatmap("amba", 9, 1)).toBe(true);
+    expect(shouldShowHeatmap("argentina", 7, 1)).toBe(true);
+  });
+
+  it("shows limited interpolation with two or three stations", () => {
     expect(shouldShowHeatmap("amba", 9, 2)).toBe(true);
+    expect(shouldShowHeatmap("amba", 9, 3)).toBe(true);
+    expect(shouldShowHeatmap("argentina", 7, 3)).toBe(true);
+  });
+
+  it("shows the normal regional heatmap with four or more stations", () => {
+    expect(shouldShowHeatmap("amba", 9, 4)).toBe(true);
+  });
+
+  it("hides the national heatmap until zoomed in", () => {
+    expect(shouldShowHeatmap("argentina", 4, 12)).toBe(false);
+    expect(shouldShowHeatmap("argentina", 6, 12)).toBe(false);
+    expect(shouldShowHeatmap("argentina", 7, 4)).toBe(true);
+  });
+});
+
+describe("heatLayerConfig", () => {
+  it("returns null when the heatmap is hidden", () => {
+    expect(heatLayerConfig("amba", 0, 9, 9)).toBeNull();
+    expect(heatLayerConfig("argentina", 4, 6, 6)).toBeNull();
+  });
+
+  it("uses a smaller local halo for one, two or three stations", () => {
+    const single = heatLayerConfig("amba", 1, 9, 9)!;
+    const couple = heatLayerConfig("amba", 2, 9, 9)!;
+    const trio = heatLayerConfig("amba", 3, 9, 9)!;
+    const full = heatLayerConfig("amba", 4, 9, 9)!;
+
+    expect(single.radius).toBeLessThan(full.radius);
+    expect(couple.radius).toBeLessThan(full.radius);
+    expect(trio.radius).toBeLessThan(full.radius);
+    expect(single.blur).toBeLessThan(full.blur);
+  });
+
+  it("enables a full regional cloud with four or more stations", () => {
+    const full = heatLayerConfig("amba", 4, 9, 9)!;
+    expect(full.radius).toBe(75);
+    expect(full.blur).toBe(58);
+    expect(full.minOpacity).toBe(0.2);
+  });
+
+  it("uses contained settings for the national view", () => {
+    const national = heatLayerConfig("argentina", 6, 8, 6)!;
+    const regional = heatLayerConfig("amba", 6, 9, 9)!;
+    expect(national.radius).toBeLessThan(regional.radius);
+    expect(national.blur).toBeLessThan(regional.blur);
+    expect(national.minOpacity).toBeLessThan(regional.minOpacity);
+  });
+
+  it("anchors maxZoom to the region default zoom", () => {
+    const amba = heatLayerConfig("amba", 4, 9, 9)!;
+    expect(amba.maxZoom).toBe(9);
+    const cuyo = heatLayerConfig("cuyo", 4, 6, 6)!;
+    expect(cuyo.maxZoom).toBe(6);
+  });
+
+  it("shrinks the halo when zooming out so coverage fades gradually", () => {
+    const atDefault = heatLayerConfig("amba", 4, 9, 9)!;
+    const zoomedOut = heatLayerConfig("amba", 4, 8, 9)!;
+    expect(zoomedOut.radius).toBeLessThan(atDefault.radius);
+    expect(zoomedOut.blur).toBeLessThan(atDefault.blur);
   });
 });
