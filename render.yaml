@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: aire-ba-api
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install .
+    startCommand: uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.5"
+      - key: ENVIRONMENT
+        value: production
+      - key: SPATIAL_BACKEND
+        value: in_memory
+      - key: STATION_DATA_SOURCE
+        value: waqi
+      - key: CORS_ORIGINS
+        value: http://localhost:5173,http://127.0.0.1:5173,https://aire-ba.vercel.app
+      - key: WAQI_TOKEN
+        sync: false
