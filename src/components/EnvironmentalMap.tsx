@@ -6,6 +6,7 @@ import type { Region, Scope, Station, StationQueryMetadata, Zone } from "@/types
 import { cn } from "@/lib/utils";
 import {
   availablePollutants,
+  heatDiagnosticsForPollutant,
   heatPointsForPollutant,
   POLLUTANTS,
   pollutantLabel,
@@ -15,6 +16,8 @@ import {
 import { aqiHeatGradientCss, AQI_HEAT_LEGEND } from "@/lib/aqiHeatScale";
 import { pollutantInfo } from "@/lib/pollutantInfo";
 import { stationFreshness, RECENT_AFTER_HOURS } from "@/lib/stationFreshness";
+import { resolveMapRenderer } from "@/lib/mapRenderer";
+import { findPollutantHotspot, type PollutantHotspot } from "@/lib/maplibreHeat";
 import {
   coverageConfidenceLabel,
   coverageConfidenceMessage,
@@ -25,6 +28,10 @@ import {
 
 const LeafletMap = React.lazy(() =>
   import("@/components/map/LeafletMap").then((mod) => ({ default: mod.LeafletMap })),
+);
+
+const MapLibreGlobe = React.lazy(() =>
+  import("@/components/map/MapLibreGlobe").then((mod) => ({ default: mod.MapLibreGlobe })),
 );
 
 const POLLUTANT_KEYS: PollutantKey[] = ["pm25", "pm10", "no2", "o3", "so2", "co"];
@@ -307,9 +314,13 @@ function StationPanel({
 
 function PollutantInfoPanel({
   pollutant,
+  hotspot,
+  onViewHotspot,
   onClose,
 }: {
   pollutant: PollutantKey;
+  hotspot: PollutantHotspot | null;
+  onViewHotspot: () => void;
   onClose: () => void;
 }) {
   const info = pollutantInfo(pollutant);
@@ -342,6 +353,24 @@ function PollutantInfoPanel({
       </div>
 
       <dl className="mt-3 grid gap-2 text-sm leading-relaxed">
+        {hotspot && (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.07] p-3">
+            <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/70">Mayor nivel disponible</dt>
+            <dd className="mt-1 text-white/78">
+              AQI {Math.round(hotspot.maxAqi)} · {hotspot.category} · {hotspot.stationCount} estaciones
+            </dd>
+            <dd className="mt-1 text-xs text-white/50">
+              {hotspot.freshestMeasuredAt ? `Dato más reciente: ${hotspot.freshestMeasuredAt}` : "Sin fecha reciente informada"}
+            </dd>
+            <button
+              type="button"
+              onClick={onViewHotspot}
+              className="mt-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-medium text-white/72 transition hover:bg-white/14 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
+            >
+              Ver foco en el mapa
+            </button>
+          </div>
+        )}
         <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3">
           <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">Qué es</dt>
           <dd className="mt-1 text-white/76">{info.description}</dd>
@@ -423,17 +452,33 @@ export function EnvironmentalMap({
   const [selectedPollutant, setSelectedPollutant] = React.useState<PollutantKey>("pm10");
   const [selectedStation, setSelectedStation] = React.useState<Station | null>(null);
   const [pollutantPanelOpen, setPollutantPanelOpen] = React.useState(true);
+  const [mapLibreUnavailable, setMapLibreUnavailable] = React.useState(false);
+  const [focusHotspotRequest, setFocusHotspotRequest] = React.useState(0);
 
   const fallbackMap = (
     <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />
   );
+  const requestedRenderer = resolveMapRenderer(import.meta.env.VITE_MAP_RENDERER, import.meta.env.DEV);
+  const mapRenderer = requestedRenderer === "maplibre" && !mapLibreUnavailable ? "maplibre" : "leaflet";
 
   const available = React.useMemo(() => availablePollutants(stations), [stations]);
   const heatPointCount = React.useMemo(
     () => heatPointsForPollutant(stations, selectedPollutant).length,
     [stations, selectedPollutant],
   );
+  const heatDiagnostics = React.useMemo(
+    () => heatDiagnosticsForPollutant(stations, selectedPollutant),
+    [stations, selectedPollutant],
+  );
+  const usesReducedOldData = heatDiagnostics.stale > 0 || heatDiagnostics.old > 0;
   const selectedPollutantLabel = pollutantLabel(selectedPollutant);
+  const hotspot = React.useMemo(
+    () => findPollutantHotspot(stations, selectedPollutant),
+    [stations, selectedPollutant],
+  );
+  const hotspotsByPollutant = React.useMemo(() => {
+    return new Map(POLLUTANTS.map((pollutant) => [pollutant.key, findPollutantHotspot(stations, pollutant.key)]));
+  }, [stations]);
 
   React.useEffect(() => {
     if (!selectedStation) return;
@@ -467,16 +512,33 @@ export function EnvironmentalMap({
       <div className="absolute inset-0 z-0">
         <MapErrorBoundary fallback={fallbackMap}>
           <Suspense fallback={<MapLoadingState />}>
-            <LeafletMap
-              stations={stations}
-              zones={zones}
-              region={selectedRegion}
-              selectedPollutant={selectedPollutant}
-              selectedStationUid={selectedStation?.uid ?? null}
-              selectedZoneId={selectedZoneId}
-              onStationSelect={setSelectedStation}
-              onZoneClick={onZoneClick}
-            />
+            {mapRenderer === "maplibre" ? (
+              <MapLibreGlobe
+                stations={stations}
+                zones={zones}
+                region={selectedRegion}
+                selectedPollutant={selectedPollutant}
+                selectedStationUid={selectedStation?.uid ?? null}
+                selectedZoneId={selectedZoneId}
+                panelOpen={pollutantPanelOpen || Boolean(selectedStation)}
+                hotspot={hotspot}
+                focusHotspotRequest={focusHotspotRequest}
+                onStationSelect={setSelectedStation}
+                onZoneClick={onZoneClick}
+                onUnavailable={() => setMapLibreUnavailable(true)}
+              />
+            ) : (
+              <LeafletMap
+                stations={stations}
+                zones={zones}
+                region={selectedRegion}
+                selectedPollutant={selectedPollutant}
+                selectedStationUid={selectedStation?.uid ?? null}
+                selectedZoneId={selectedZoneId}
+                onStationSelect={setSelectedStation}
+                onZoneClick={onZoneClick}
+              />
+            )}
           </Suspense>
         </MapErrorBoundary>
       </div>
@@ -491,8 +553,12 @@ export function EnvironmentalMap({
                 key={pollutant.key}
                 type="button"
                 onClick={() => {
+                  const changed = selectedPollutant !== pollutant.key;
                   setSelectedPollutant(pollutant.key);
                   setPollutantPanelOpen(true);
+                  if (changed && hotspotsByPollutant.get(pollutant.key)) {
+                    setFocusHotspotRequest((request) => request + 1);
+                  }
                 }}
                 aria-pressed={isSelected}
                 className={cn(
@@ -521,6 +587,12 @@ export function EnvironmentalMap({
           </div>
         )}
 
+        {usesReducedOldData && (
+          <div className="pointer-events-auto w-fit max-w-[min(92vw,32rem)] rounded-full border border-amber-200/20 bg-amber-300/10 px-3 py-1.5 text-sm text-amber-50/90 shadow-xl backdrop-blur-xl">
+            Esta visualización incluye datos antiguos con intensidad reducida. Revisá la fecha de cada estación.
+          </div>
+        )}
+
         {!coverageMessage && regionCoverage?.nearest && (
           <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
             Estación más cercana al centro de la región: "{regionCoverage.nearest.station.name}" a{" "}
@@ -537,7 +609,12 @@ export function EnvironmentalMap({
       </div>
 
       {pollutantPanelOpen && (
-        <PollutantInfoPanel pollutant={selectedPollutant} onClose={() => setPollutantPanelOpen(false)} />
+        <PollutantInfoPanel
+          pollutant={selectedPollutant}
+          hotspot={hotspot}
+          onViewHotspot={() => setFocusHotspotRequest((request) => request + 1)}
+          onClose={() => setPollutantPanelOpen(false)}
+        />
       )}
 
       {selectedStation && (

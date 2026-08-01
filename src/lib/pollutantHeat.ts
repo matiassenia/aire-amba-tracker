@@ -1,7 +1,7 @@
 import type { Station } from "@/types/airQuality";
 import { aqiToVisualHeatWeight } from "@/lib/aqiHeatScale";
-import { isFresh } from "@/lib/coverage";
 import { POLLUTANT_INFO } from "@/lib/pollutantInfo";
+import { stationFreshness } from "@/lib/stationFreshness";
 
 export type PollutantKey = "pm25" | "pm10" | "no2" | "o3" | "so2" | "co";
 
@@ -10,7 +10,23 @@ export type HeatPoint = {
   lon: number;
   value: number;
   intensity: number;
+  visualWeight: number;
+  freshnessMultiplier: number;
   station: Station;
+};
+
+export type HeatFreshnessBand = "fresh" | "stale" | "old" | "expired" | "unknown";
+
+export type HeatDiagnostics = {
+  stationsReceived: number;
+  argentineStations: number;
+  stationsWithPollutantValue: number;
+  fresh: number;
+  stale: number;
+  old: number;
+  unknown: number;
+  expired: number;
+  heatPointsGenerated: number;
 };
 
 export const POLLUTANTS: { key: PollutantKey; label: string }[] = Object.values(POLLUTANT_INFO).map(
@@ -26,24 +42,88 @@ export function pollutantValue(station: Station, pollutant: PollutantKey): numbe
   return value === undefined ? null : value;
 }
 
-// Los puntos termicos solo se generan para estaciones con datos FRESCOS
-// (politica de frescura unica: < 24 h). Las estaciones viejas o sin timestamp
-// siguen visibles como marcadores, pero no dibujan calor: no representan el
-// aire actual.
+export function heatFreshnessBand(
+  station: Station,
+  now: Date = new Date(),
+): HeatFreshnessBand {
+  const measured = station.measured_at ?? station.time ?? null;
+  const freshness = stationFreshness(measured, now);
+  if (freshness.ageHours === null) return "unknown";
+  if (freshness.ageHours <= 6) return "fresh";
+  if (freshness.ageHours <= 24) return "stale";
+  if (freshness.ageHours <= 72) return "old";
+  return "expired";
+}
+
+export function freshnessMultiplierForStation(
+  station: Station,
+  now: Date = new Date(),
+): number {
+  switch (heatFreshnessBand(station, now)) {
+    case "fresh":
+      return 1;
+    case "stale":
+      return 0.75;
+    case "old":
+      return 0.35;
+    case "expired":
+    case "unknown":
+      return 0;
+  }
+}
+
+export function heatDiagnosticsForPollutant(
+  stations: Station[],
+  pollutant: PollutantKey,
+  now: Date = new Date(),
+): HeatDiagnostics {
+  const diagnostics: HeatDiagnostics = {
+    stationsReceived: stations.length,
+    argentineStations: stations.filter((station) => station.region_id !== "foreign").length,
+    stationsWithPollutantValue: 0,
+    fresh: 0,
+    stale: 0,
+    old: 0,
+    unknown: 0,
+    expired: 0,
+    heatPointsGenerated: 0,
+  };
+
+  for (const station of stations) {
+    const value = pollutantValue(station, pollutant);
+    if (value === null || !Number.isFinite(value)) continue;
+    diagnostics.stationsWithPollutantValue += 1;
+    const band = heatFreshnessBand(station, now);
+    diagnostics[band] += 1;
+    if (freshnessMultiplierForStation(station, now) > 0) {
+      diagnostics.heatPointsGenerated += 1;
+    }
+  }
+
+  return diagnostics;
+}
+
+// Los puntos térmicos se generan solo cuando hay dato y timestamp utilizable.
+// La antigüedad reduce peso/opacidad visual, pero no cambia la categoría AQI.
 export function heatPointsForPollutant(
   stations: Station[],
   pollutant: PollutantKey,
+  now: Date = new Date(),
 ): HeatPoint[] {
   return stations.flatMap((station) => {
-    if (!isFresh(station)) return [];
     const value = pollutantValue(station, pollutant);
     if (value === null || !Number.isFinite(value)) return [];
+    const freshnessMultiplier = freshnessMultiplierForStation(station, now);
+    if (freshnessMultiplier <= 0) return [];
+    const visualWeight = aqiToVisualHeatWeight(value);
     return [
       {
         lat: station.lat,
         lon: station.lon,
         value,
-        intensity: aqiToVisualHeatWeight(value),
+        intensity: visualWeight * freshnessMultiplier,
+        visualWeight,
+        freshnessMultiplier,
         station,
       },
     ];
@@ -70,7 +150,7 @@ export function shouldShowHeatmap(
   heatPointCount: number,
 ): boolean {
   if (heatPointCount < 1) return false;
-  if (regionId === "argentina") return zoom >= 7;
+  if (regionId === "argentina") return zoom >= 2;
   return true;
 }
 
@@ -129,9 +209,10 @@ export function heatLayerConfig(
   let maxZoom: number;
 
   if (regionId === "argentina") {
-    radius = 26;
-    blur = 36;
-    minOpacity = 0.12;
+    const zoomScale = Math.max(1, Math.pow(1.35, zoom - 2));
+    radius = Math.round(Math.min(58, 34 * zoomScale));
+    blur = Math.round(Math.min(62, 44 * zoomScale));
+    minOpacity = 0.16;
     maxZoom = 6;
   } else {
     const localScale = pointCount < 4 ? 0.7 : 1;

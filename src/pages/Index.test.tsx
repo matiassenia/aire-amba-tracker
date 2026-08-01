@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import Index from "./Index";
 
 vi.mock("@/components/map/LeafletMap", () => ({
@@ -20,6 +20,10 @@ vi.mock("@/hooks/useAirQualityData", () => ({
 }));
 
 describe("guía educativa desde el mapa", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_MAP_RENDERER", "leaflet");
+  });
+
   it("el header contiene el acceso a la guía", async () => {
     render(<Index />);
 

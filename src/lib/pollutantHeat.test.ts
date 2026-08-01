@@ -5,6 +5,9 @@ import {
   availablePollutants,
   capRadiusPixels,
   heatLayerConfig,
+  freshnessMultiplierForStation,
+  heatDiagnosticsForPollutant,
+  heatFreshnessBand,
   heatPointsForPollutant,
   maxInfluenceRadiusKm,
   pollutantValue,
@@ -61,18 +64,70 @@ describe("pollutant heat helpers", () => {
     expect(heatPointsForPollutant(nanOnly, "pm10")).toEqual([]);
   });
 
-  it("excludes stale and unknown stations from the heatmap", () => {
-    const staleIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  it("attenuates old stations and excludes unknown stations from the heatmap", () => {
+    const staleIso = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+    const oldIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const expiredIso = new Date(Date.now() - 96 * 60 * 60 * 1000).toISOString();
     const mixed: Station[] = [
       { uid: 1, name: "fresca", lat: -34.6, lon: -58.4, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: 22 } },
-      { uid: 2, name: "vieja", lat: -34.7, lon: -58.5, aqi: null, measured_at: staleIso, iaqi: { pm10: 30 } },
-      { uid: 3, name: "sin fecha", lat: -34.8, lon: -58.6, aqi: null, iaqi: { pm10: 40 } },
+      { uid: 2, name: "stale", lat: -34.7, lon: -58.5, aqi: null, measured_at: staleIso, iaqi: { pm10: 30 } },
+      { uid: 3, name: "old", lat: -34.8, lon: -58.6, aqi: null, measured_at: oldIso, iaqi: { pm10: 40 } },
+      { uid: 4, name: "expired", lat: -34.9, lon: -58.7, aqi: null, measured_at: expiredIso, iaqi: { pm10: 50 } },
+      { uid: 5, name: "sin fecha", lat: -35, lon: -58.8, aqi: null, iaqi: { pm10: 60 } },
+    ];
+
+    const points = heatPointsForPollutant(mixed, "pm10");
+
+    expect(points.map((point) => point.station.uid)).toEqual([1, 2, 3]);
+    expect(points[0].freshnessMultiplier).toBe(1);
+    expect(points[1].freshnessMultiplier).toBe(0.75);
+    expect(points[2].freshnessMultiplier).toBe(0.35);
+    expect(points[2].intensity).toBe(aqiToVisualHeatWeight(40) * 0.35);
+  });
+
+  it("does not generate heat points for data older than 72 hours", () => {
+    const staleIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const mixed: Station[] = [
+      { uid: 1, name: "old", lat: -34.6, lon: -58.4, aqi: null, measured_at: staleIso, iaqi: { pm10: 22 } },
+      { uid: 2, name: "expired", lat: -34.7, lon: -58.5, aqi: null, measured_at: new Date(Date.now() - 73 * 60 * 60 * 1000).toISOString(), iaqi: { pm10: 30 } },
     ];
 
     const points = heatPointsForPollutant(mixed, "pm10");
 
     expect(points).toHaveLength(1);
     expect(points[0].station.uid).toBe(1);
+  });
+
+  it("reports heat diagnostics for the active pollutant", () => {
+    const now = new Date("2026-08-01T12:00:00Z");
+    const mixed: Station[] = [
+      { uid: 1, name: "fresh", lat: -34, lon: -58, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { pm25: 10 } },
+      { uid: 2, name: "stale", lat: -34, lon: -58, aqi: null, measured_at: "2026-08-01T00:00:00Z", iaqi: { pm25: 20 } },
+      { uid: 3, name: "old", lat: -34, lon: -58, aqi: null, measured_at: "2026-07-30T12:00:00Z", iaqi: { pm25: 30 } },
+      { uid: 4, name: "unknown", lat: -34, lon: -58, aqi: null, iaqi: { pm25: 40 } },
+      { uid: 5, name: "expired", lat: -34, lon: -58, aqi: null, measured_at: "2026-07-28T11:00:00Z", iaqi: { pm25: 50 } },
+    ];
+
+    expect(heatDiagnosticsForPollutant(mixed, "pm25", now)).toMatchObject({
+      stationsReceived: 5,
+      argentineStations: 5,
+      stationsWithPollutantValue: 5,
+      fresh: 1,
+      stale: 1,
+      old: 1,
+      unknown: 1,
+      expired: 1,
+      heatPointsGenerated: 3,
+    });
+  });
+
+  it("uses the requested freshness multipliers", () => {
+    const now = new Date("2026-08-01T12:00:00Z");
+    expect(heatFreshnessBand({ uid: 1, name: "a", lat: 0, lon: 0, aqi: null, measured_at: "2026-08-01T07:00:00Z" }, now)).toBe("fresh");
+    expect(freshnessMultiplierForStation({ uid: 2, name: "b", lat: 0, lon: 0, aqi: null, measured_at: "2026-08-01T00:00:00Z" }, now)).toBe(0.75);
+    expect(freshnessMultiplierForStation({ uid: 3, name: "c", lat: 0, lon: 0, aqi: null, measured_at: "2026-07-30T12:00:00Z" }, now)).toBe(0.35);
+    expect(freshnessMultiplierForStation({ uid: 4, name: "d", lat: 0, lon: 0, aqi: null, measured_at: "2026-07-28T11:00:00Z" }, now)).toBe(0);
+    expect(freshnessMultiplierForStation({ uid: 5, name: "e", lat: 0, lon: 0, aqi: null }, now)).toBe(0);
   });
 
   it("preserves real station coordinates in heat points", () => {
@@ -148,9 +203,9 @@ describe("shouldShowHeatmap", () => {
     expect(shouldShowHeatmap("amba", 9, 4)).toBe(true);
   });
 
-  it("hides the national heatmap until zoomed in", () => {
-    expect(shouldShowHeatmap("argentina", 4, 12)).toBe(false);
-    expect(shouldShowHeatmap("argentina", 6, 12)).toBe(false);
+  it("shows the national heatmap from continental zoom", () => {
+    expect(shouldShowHeatmap("argentina", 2, 12)).toBe(true);
+    expect(shouldShowHeatmap("argentina", 4, 12)).toBe(true);
     expect(shouldShowHeatmap("argentina", 7, 4)).toBe(true);
   });
 });
@@ -158,7 +213,7 @@ describe("shouldShowHeatmap", () => {
 describe("heatLayerConfig", () => {
   it("returns null when the heatmap is hidden", () => {
     expect(heatLayerConfig("amba", 0, 9, 9)).toBeNull();
-    expect(heatLayerConfig("argentina", 4, 6, 6)).toBeNull();
+    expect(heatLayerConfig("argentina", 0, 6, 6)).toBeNull();
   });
 
   it("uses a smaller local halo for one, two or three stations", () => {

@@ -7,6 +7,7 @@ import { AQI_HEAT_GRADIENT } from "@/lib/aqiHeatScale";
 import type { Region, Station, Zone } from "@/types/airQuality";
 import {
   heatLayerConfig,
+  heatDiagnosticsForPollutant,
   heatPointsForPollutant,
   pollutantValue,
   type PollutantKey,
@@ -107,6 +108,10 @@ export function LeafletMap({
   const heatConfig = useMemo(
     () => heatLayerConfig(regionId, heatPoints.length, zoom, region?.default_zoom ?? 9),
     [regionId, heatPoints.length, zoom, region?.default_zoom]
+  );
+  const heatDiagnostics = useMemo(
+    () => heatDiagnosticsForPollutant(stations, selectedPollutant),
+    [stations, selectedPollutant],
   );
   const useClusters = shouldClusterStations(regionId, zoom, stations.length);
 
@@ -228,6 +233,18 @@ export function LeafletMap({
       </MapContainer>
 
       <HeatDiagnostics regionId={regionId} zoom={zoom} heatPoints={heatPoints} config={heatConfig} />
+      {import.meta.env.DEV && (
+        <div className="pointer-events-none absolute right-2 top-28 z-[1000] max-w-[16rem] rounded-lg border border-white/10 bg-slate-950/85 px-2 py-1.5 font-mono text-[10px] leading-snug text-white/85 backdrop-blur">
+          <div>recibidas: {heatDiagnostics.stationsReceived}</div>
+          <div>argentinas: {heatDiagnostics.argentineStations}</div>
+          <div>con valor: {heatDiagnostics.stationsWithPollutantValue}</div>
+          <div>fresh: {heatDiagnostics.fresh}</div>
+          <div>stale: {heatDiagnostics.stale}</div>
+          <div>old: {heatDiagnostics.old}</div>
+          <div>unknown: {heatDiagnostics.unknown}</div>
+          <div>heat points: {heatDiagnostics.heatPointsGenerated}</div>
+        </div>
+      )}
     </div>
   );
 }
