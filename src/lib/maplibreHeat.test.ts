@@ -69,7 +69,26 @@ describe("visualGroupsForStations", () => {
   });
 
   it("keeps overview visible on continental zoom and hides it when close", () => {
-    expect(overviewLayerExpressions.outerOpacity).toEqual(["interpolate", ["linear"], ["zoom"], 2, 0.36, 4, 0.42, 6.5, 0.24, 8, 0]);
+    expect(overviewLayerExpressions.outerRadius).toContain(3.35);
+    expect(overviewLayerExpressions.outerRadius).toContain(66);
+    expect(overviewLayerExpressions.outerOpacity).toContainEqual(["max", 0.35, ["get", "freshnessFactor"]]);
+    expect(JSON.stringify(overviewLayerExpressions.outerOpacity)).toContain("intensity");
+  });
+
+  it("keeps old data visible with reduced overview opacity but excludes expired data", () => {
+    const oldOnly: Station[] = [
+      { uid: 1, name: "old", lat: -32.89, lon: -68.84, aqi: null, measured_at: "2026-07-30T12:00:00Z", iaqi: { pm25: 80 } },
+      { uid: 2, name: "expired", lat: -31.4, lon: -64.18, aqi: null, measured_at: "2026-07-28T10:00:00Z", iaqi: { pm25: 180 } },
+    ];
+    const groups = visualGroupsForStations(oldOnly, "pm25", 80, now);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].freshnessFactor).toBe(0.35);
+    expect(groups[0].oldPercent).toBe(1);
+  });
+
+  it("uses absolute AQI colors for overview groups", () => {
+    const [group] = visualGroupsForStations(stations, "pm25", 80, now);
+    expect(group.color).toBe(aqiCategory(group.maxAqi).color);
   });
 });
 

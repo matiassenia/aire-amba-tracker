@@ -48,6 +48,7 @@ export type VisualGroup = {
   freshPercent: number;
   stalePercent: number;
   oldPercent: number;
+  freshnessFactor: number;
   intensity: number;
   stations: readonly Station[];
 };
@@ -151,12 +152,12 @@ export const mapLibreHeatExpressions = {
 };
 
 export const overviewLayerExpressions = {
-  outerRadius: ["interpolate", ["linear"], ["zoom"], 2, 34, 4, 54, 6, 68, 8, 30],
-  outerOpacity: ["interpolate", ["linear"], ["zoom"], 2, 0.36, 4, 0.42, 6.5, 0.24, 8, 0],
-  middleRadius: ["interpolate", ["linear"], ["zoom"], 2, 18, 4, 32, 6, 42, 8, 16],
-  middleOpacity: ["interpolate", ["linear"], ["zoom"], 2, 0.58, 4, 0.62, 6.5, 0.42, 8, 0],
-  coreRadius: ["interpolate", ["linear"], ["get", "stationCount"], 1, 4, 8, 8, 20, 12],
-  coreOpacity: ["interpolate", ["linear"], ["zoom"], 2, 0.95, 6.5, 0.84, 8, 0],
+  outerRadius: ["interpolate", ["linear"], ["zoom"], 2, 52, 3.35, 66, 4, 72, 6, 82, 8, 28],
+  outerOpacity: ["*", ["interpolate", ["linear"], ["zoom"], 2, 0.32, 3.35, 0.4, 4, 0.42, 6.5, 0.28, 8, 0], ["max", 0.35, ["get", "freshnessFactor"]], ["interpolate", ["linear"], ["get", "intensity"], 0, 0.65, 1, 1]],
+  middleRadius: ["interpolate", ["linear"], ["zoom"], 2, 30, 3.35, 42, 4, 48, 6, 56, 8, 18],
+  middleOpacity: ["*", ["interpolate", ["linear"], ["zoom"], 2, 0.5, 3.35, 0.64, 4, 0.68, 6.5, 0.46, 8, 0], ["max", 0.35, ["get", "freshnessFactor"]], ["interpolate", ["linear"], ["get", "intensity"], 0, 0.65, 1, 1]],
+  coreRadius: ["interpolate", ["linear"], ["get", "stationCount"], 1, 5, 8, 9, 20, 12],
+  coreOpacity: ["*", ["interpolate", ["linear"], ["zoom"], 2, 0.92, 6.5, 1, 8, 0], ["max", 0.45, ["get", "freshnessFactor"]], ["interpolate", ["linear"], ["get", "intensity"], 0, 0.72, 1, 1]],
 };
 
 export function visualGroupsForStations(
@@ -199,6 +200,7 @@ export function visualGroupsForStations(
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
     const bands = group.map((station) => heatFreshnessBand(station, now));
     const usableFreshness = group.reduce((sum, station) => sum + freshnessMultiplierForStation(station, now), 0);
+    const freshnessFactor = usableFreshness / group.length;
     return {
       id: `visual-group-${index}`,
       lat: group.reduce((sum, station) => sum + station.lat, 0) / group.length,
@@ -213,7 +215,8 @@ export function visualGroupsForStations(
       freshPercent: bands.filter((band) => band === "fresh").length / group.length,
       stalePercent: bands.filter((band) => band === "stale").length / group.length,
       oldPercent: bands.filter((band) => band === "old").length / group.length,
-      intensity: Math.min(1, aqiToVisualHeatWeight(maxAqi) * Math.log2(group.length + 1) * (usableFreshness / group.length)),
+      freshnessFactor,
+      intensity: Math.min(1, aqiToVisualHeatWeight(maxAqi) * Math.log2(group.length + 1) * freshnessFactor),
       stations: group,
     };
   });

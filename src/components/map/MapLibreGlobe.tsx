@@ -15,10 +15,14 @@ import {
 } from "@/lib/maplibreHeat";
 import {
   AMBA_GLOBE_CAMERA,
+  AMBA_HOTSPOT_CAMERA_ZOOM,
   ARGENTINA_GLOBE_CAMERA,
+  AIR_QUALITY_LAYER_ORDER,
+  cameraTransitionDuration,
   cameraForHotspot,
   isWebGLAvailable,
   isMobileViewport,
+  shouldNavigateToHotspot,
   prefersReducedMotion,
   shouldPulseHotspot,
   shouldAutoRotate,
@@ -35,6 +39,7 @@ type MapLibreGlobeProps = {
   panelOpen?: boolean;
   hotspot?: PollutantHotspot | null;
   focusHotspotRequest?: number;
+  forceHotspotNavigation?: boolean;
   onStationSelect: (station: Station) => void;
   onZoneClick: (zone: Zone) => void;
   onUnavailable: () => void;
@@ -57,14 +62,28 @@ function cameraForRegion(region: Region | null): GlobeCamera {
   };
 }
 
-function flyToCamera(map: MapLibreMap, camera: GlobeCamera, reducedMotion = false) {
-  map.easeTo({
+function currentGlobeCamera(map: MapLibreMap): GlobeCamera {
+  const center = map.getCenter();
+  return {
+    latitude: center.lat,
+    longitude: center.lng,
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+    pitch: map.getPitch(),
+  };
+}
+
+function flyToCamera(map: MapLibreMap, camera: GlobeCamera, reducedMotion = false, duration?: number) {
+  map.flyTo({
     center: [camera.longitude, camera.latitude],
     zoom: camera.zoom,
     bearing: camera.bearing,
     pitch: camera.pitch,
-    duration: reducedMotion ? 120 : 1100,
-    easing: (t) => 1 - Math.pow(1 - t, 3),
+    duration: duration ?? cameraTransitionDuration(currentGlobeCamera(map), camera, reducedMotion),
+    speed: 0.45,
+    curve: 1.15,
+    essential: false,
+    easing: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
   });
 }
 
@@ -105,6 +124,7 @@ function groupFeatureCollection(stations: Station[], pollutant: PollutantKey) {
         freshPercent: group.freshPercent,
         stalePercent: group.stalePercent,
         oldPercent: group.oldPercent,
+        freshnessFactor: group.freshnessFactor,
       },
     })),
   };
@@ -137,6 +157,7 @@ export function MapLibreGlobe({
   panelOpen = false,
   hotspot: hotspotProp,
   focusHotspotRequest = 0,
+  forceHotspotNavigation = false,
   onStationSelect,
   onUnavailable,
 }: MapLibreGlobeProps) {
@@ -295,10 +316,10 @@ export function MapLibreGlobe({
           source: GROUP_SOURCE_ID,
           maxzoom: 8,
           layout: {
-            "text-field": ["to-string", ["get", "stationCount"]],
+            "text-field": ["case", [">=", ["get", "oldPercent"], 0.5], "dato antiguo", ["to-string", ["get", "stationCount"]]],
             "text-size": 12,
           },
-          paint: { "text-color": "#ffffff" },
+          paint: { "text-color": "#ffffff", "text-halo-color": "rgba(2,6,23,0.8)", "text-halo-width": 1.2 },
         });
         map?.addSource(HOTSPOT_SOURCE_ID, { type: "geojson", data: hotspotGeoJsonRef.current });
         map?.addLayer({
@@ -349,6 +370,7 @@ export function MapLibreGlobe({
             "circle-stroke-width": 1,
           },
         });
+        map?.moveLayer(AIR_QUALITY_LAYER_ORDER[AIR_QUALITY_LAYER_ORDER.length - 1]);
         map?.on("click", "air-quality-stations", (event) => {
           const uid = event.features?.[0]?.properties?.uid;
           const station = stationsRef.current.find((candidate) => candidate.uid === Number(uid));
@@ -391,11 +413,21 @@ export function MapLibreGlobe({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !hotspot || focusHotspotRequest === lastFocusedRequestRef.current || userInteractedRef.current) return;
+    if (!map || !hotspot || focusHotspotRequest === lastFocusedRequestRef.current || (!forceHotspotNavigation && userInteractedRef.current)) return;
     lastFocusedRequestRef.current = focusHotspotRequest;
+    const targetCamera = cameraForHotspot(hotspot.lat, hotspot.lon);
+    if (regionRef.current?.id === "amba") {
+      targetCamera.zoom = AMBA_HOTSPOT_CAMERA_ZOOM;
+      targetCamera.pitch = 10;
+    }
+    if (!forceHotspotNavigation && !shouldNavigateToHotspot(currentGlobeCamera(map), targetCamera)) {
+      const source = map.getSource(HOTSPOT_SOURCE_ID) as GeoJSONSource | undefined;
+      source?.setData(hotspotFeatureCollection(hotspot, 0.42));
+      return;
+    }
     setUserInteracted(true);
     userInteractedRef.current = true;
-    flyToCamera(map, cameraForHotspot(hotspot.lat, hotspot.lon), reducedMotion);
+    flyToCamera(map, targetCamera, reducedMotion);
     const resumeDelay = reducedMotion ? 300 : 14000;
     if (interactionTimeoutRef.current) window.clearTimeout(interactionTimeoutRef.current);
     interactionTimeoutRef.current = window.setTimeout(() => {
@@ -425,7 +457,7 @@ export function MapLibreGlobe({
       if (pulseFrameRef.current) window.cancelAnimationFrame(pulseFrameRef.current);
       pulseFrameRef.current = null;
     };
-  }, [focusHotspotRequest, hotspot, reducedMotion]);
+  }, [focusHotspotRequest, forceHotspotNavigation, hotspot, reducedMotion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -468,7 +500,8 @@ export function MapLibreGlobe({
         </div>
       )}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[min(92vw,34rem)] rounded-2xl border border-white/10 bg-slate-950/52 px-3 py-2 text-xs leading-relaxed text-white/58 backdrop-blur-xl">
-        <div className="font-medium text-white/78">Focos visibles según estaciones disponibles</div>
+        <div className="font-medium text-white/78">Focos según estaciones disponibles</div>
+        <div>Color: nivel AQI · Intensidad: frescura y cantidad de estaciones</div>
         <div>Las zonas transparentes pueden no tener cobertura. Basemap: CARTO Dark Matter con datos © OpenStreetMap contributors © CARTO.</div>
       </div>
     </div>

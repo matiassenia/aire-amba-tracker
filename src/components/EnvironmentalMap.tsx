@@ -454,6 +454,7 @@ export function EnvironmentalMap({
   const [pollutantPanelOpen, setPollutantPanelOpen] = React.useState(true);
   const [mapLibreUnavailable, setMapLibreUnavailable] = React.useState(false);
   const [focusHotspotRequest, setFocusHotspotRequest] = React.useState(0);
+  const [forceHotspotNavigation, setForceHotspotNavigation] = React.useState(false);
 
   const fallbackMap = (
     <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />
@@ -523,6 +524,7 @@ export function EnvironmentalMap({
                 panelOpen={pollutantPanelOpen || Boolean(selectedStation)}
                 hotspot={hotspot}
                 focusHotspotRequest={focusHotspotRequest}
+                forceHotspotNavigation={forceHotspotNavigation}
                 onStationSelect={setSelectedStation}
                 onZoneClick={onZoneClick}
                 onUnavailable={() => setMapLibreUnavailable(true)}
@@ -554,9 +556,11 @@ export function EnvironmentalMap({
                 type="button"
                 onClick={() => {
                   const changed = selectedPollutant !== pollutant.key;
+                  setForceHotspotNavigation(false);
                   setSelectedPollutant(pollutant.key);
                   setPollutantPanelOpen(true);
                   if (changed && hotspotsByPollutant.get(pollutant.key)) {
+                    setForceHotspotNavigation(false);
                     setFocusHotspotRequest((request) => request + 1);
                   }
                 }}
@@ -612,7 +616,10 @@ export function EnvironmentalMap({
         <PollutantInfoPanel
           pollutant={selectedPollutant}
           hotspot={hotspot}
-          onViewHotspot={() => setFocusHotspotRequest((request) => request + 1)}
+          onViewHotspot={() => {
+            setForceHotspotNavigation(true);
+            setFocusHotspotRequest((request) => request + 1);
+          }}
           onClose={() => setPollutantPanelOpen(false)}
         />
       )}

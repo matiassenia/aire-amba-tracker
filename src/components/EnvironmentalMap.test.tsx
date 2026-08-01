@@ -8,9 +8,9 @@ vi.mock("@/components/map/LeafletMap", () => ({
 }));
 
 vi.mock("@/components/map/MapLibreGlobe", () => ({
-  MapLibreGlobe: ({ selectedPollutant, focusHotspotRequest, hotspot }: { selectedPollutant: string; focusHotspotRequest: number; hotspot?: { maxAqi: number } | null }) => (
+  MapLibreGlobe: ({ selectedPollutant, focusHotspotRequest, forceHotspotNavigation, hotspot }: { selectedPollutant: string; focusHotspotRequest: number; forceHotspotNavigation?: boolean; hotspot?: { maxAqi: number } | null }) => (
     <div data-testid="maplibre-mock">
-      {selectedPollutant} · focus {focusHotspotRequest} · max {hotspot?.maxAqi ?? "none"}
+      {selectedPollutant} · focus {focusHotspotRequest} · force {String(Boolean(forceHotspotNavigation))} · max {hotspot?.maxAqi ?? "none"}
     </div>
   ),
 }));
@@ -89,6 +89,26 @@ describe("selector de contaminantes", () => {
     fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
     expect(await screen.findByTestId("maplibre-mock")).toHaveTextContent("focus 0");
     expect(screen.getByTestId("maplibre-mock")).toHaveTextContent("max none");
+    vi.unstubAllEnvs();
+  });
+
+  it("tocar el mismo contaminante no repite la navegación", async () => {
+    vi.stubEnv("VITE_MAP_RENDERER", "maplibre");
+    renderMap(DATA_STATIONS);
+    fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
+    expect(await screen.findByTestId("maplibre-mock")).toHaveTextContent("focus 1");
+    fireEvent.click(screen.getByRole("button", { name: "PM2.5" }));
+    expect(screen.getByTestId("maplibre-mock")).toHaveTextContent("focus 1");
+    vi.unstubAllEnvs();
+  });
+
+  it("el botón Ver foco en el mapa repite la navegación y la fuerza", async () => {
+    vi.stubEnv("VITE_MAP_RENDERER", "maplibre");
+    renderMap(DATA_STATIONS);
+    fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ver foco en el mapa" }));
+    expect(screen.getByTestId("maplibre-mock")).toHaveTextContent("focus 2");
+    expect(screen.getByTestId("maplibre-mock")).toHaveTextContent("force true");
     vi.unstubAllEnvs();
   });
 
