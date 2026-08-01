@@ -74,6 +74,8 @@ const ARGENTINA_BOUNDS = {
   maxLon: -53,
 };
 
+const MIN_SIGNIFICANT_HOTSPOT_AQI = 1;
+
 export function isStationInsideArgentina(station: Station): boolean {
   const insideBroadBounds =
     station.lat >= ARGENTINA_BOUNDS.minLat &&
@@ -246,7 +248,9 @@ export function findPollutantHotspot(
   pollutant: PollutantKey,
   now: Date = new Date(),
 ): PollutantHotspot | null {
-  const groups = visualGroupsForStations(stations, pollutant, 80, now);
+  const groups = visualGroupsForStations(stations, pollutant, 80, now).filter(
+    (group) => group.maxAqi >= MIN_SIGNIFICANT_HOTSPOT_AQI,
+  );
   if (!groups.length) return null;
   const ranked = groups
     .map((group) => ({ group, score: hotspotScoreForGroup(group) }))

@@ -97,6 +97,10 @@ describe("findPollutantHotspot", () => {
     expect(findPollutantHotspot([{ uid: 1, name: "x", lat: -34, lon: -58, aqi: null, measured_at: "2026-07-20T00:00:00Z", iaqi: { pm25: 100 } }], "pm25", now)).toBeNull();
   });
 
+  it("does not promote AQI 0 readings to highlighted hotspots", () => {
+    expect(findPollutantHotspot([{ uid: 1, name: "zero", lat: -34, lon: -58, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { co: 0 } }], "co", now)).toBeNull();
+  });
+
   it("excludes foreign stations and expired data", () => {
     const hotspot = findPollutantHotspot(stations, "pm25", now);
     expect(hotspot?.stationIds).toEqual([1, 2]);

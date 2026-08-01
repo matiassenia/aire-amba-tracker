@@ -45,6 +45,12 @@ type MapLibreGlobeProps = {
   onUnavailable: () => void;
 };
 
+type MapLibreErrorEvent = {
+  error?: Error;
+  sourceId?: string;
+  tile?: unknown;
+};
+
 const HEAT_SOURCE_ID = "air-quality-heat";
 const STATION_SOURCE_ID = "air-quality-stations";
 const GROUP_SOURCE_ID = "air-quality-visual-groups";
@@ -185,7 +191,7 @@ export function MapLibreGlobe({
   const lastFocusedRequestRef = useRef(0);
   const [rotationPaused, setRotationPaused] = useState(() => isMobileViewport());
   const [userInteracted, setUserInteracted] = useState(false);
-  const [initError, setInitError] = useState<string | null>(null);
+  const [fatalError, setFatalError] = useState(false);
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
   useEffect(() => {
@@ -202,11 +208,25 @@ export function MapLibreGlobe({
   useEffect(() => {
     if (!containerRef.current) return;
     if (!isWebGLAvailable()) {
+      setFatalError(true);
       onUnavailableRef.current();
       return;
     }
 
     let map: MapLibreMap | null = null;
+    let fatalFallbackTriggered = false;
+    const triggerFatalFallback = (error: unknown) => {
+      if (fatalFallbackTriggered) return;
+      fatalFallbackTriggered = true;
+      if (import.meta.env.DEV) {
+        console.error("[MapLibre:fatal]", error);
+      }
+      setFatalError(true);
+      map?.remove();
+      mapRef.current = null;
+      onUnavailableRef.current();
+    };
+
     try {
       const initialCamera = cameraForRegion(regionRef.current);
       map = new maplibregl.Map({
@@ -237,7 +257,14 @@ export function MapLibreGlobe({
       mapRef.current = map;
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
-      map.on("error", () => setInitError("MapLibre no pudo renderizar el globo."));
+      map.on("error", (event: MapLibreErrorEvent) => {
+        if (!import.meta.env.DEV) return;
+        console.error("[MapLibre]", {
+          message: event.error?.message,
+          sourceId: event.sourceId,
+          tile: event.tile,
+        });
+      });
       const pauseInteraction = () => {
         if (interactionTimeoutRef.current) window.clearTimeout(interactionTimeoutRef.current);
         userInteractedRef.current = true;
@@ -252,15 +279,16 @@ export function MapLibreGlobe({
       map.on("rotatestart", pauseInteraction);
       map.on("pitchstart", pauseInteraction);
       map.on("load", () => {
-        map?.setProjection({ type: "globe" });
-        (map as MapLibreMap & { setFog?: (fog: Record<string, unknown>) => void })?.setFog?.({
-          color: "#07111f",
-          "high-color": "#0f172a",
-          "space-color": "#020617",
-          "horizon-blend": 0.08,
-        });
-        map?.addSource(HEAT_SOURCE_ID, { type: "geojson", data: heatGeoJsonRef.current });
-        map?.addLayer({
+        try {
+          map?.setProjection({ type: "globe" });
+          (map as MapLibreMap & { setFog?: (fog: Record<string, unknown>) => void })?.setFog?.({
+            color: "#07111f",
+            "high-color": "#0f172a",
+            "space-color": "#020617",
+            "horizon-blend": 0.08,
+          });
+          map?.addSource(HEAT_SOURCE_ID, { type: "geojson", data: heatGeoJsonRef.current });
+          map?.addLayer({
           id: "air-quality-heatmap",
           type: "heatmap",
           source: HEAT_SOURCE_ID,
@@ -271,9 +299,9 @@ export function MapLibreGlobe({
             "heatmap-opacity": mapLibreHeatExpressions.opacity,
             "heatmap-color": mapLibreHeatExpressions.color,
           } as Record<string, unknown>,
-        });
-        map?.addSource(GROUP_SOURCE_ID, { type: "geojson", data: groupGeoJsonRef.current });
-        map?.addLayer({
+          });
+          map?.addSource(GROUP_SOURCE_ID, { type: "geojson", data: groupGeoJsonRef.current });
+          map?.addLayer({
           id: "air-quality-overview-outer",
           type: "circle",
           source: GROUP_SOURCE_ID,
@@ -284,8 +312,8 @@ export function MapLibreGlobe({
             "circle-opacity": overviewLayerExpressions.outerOpacity,
             "circle-blur": 0.82,
           } as Record<string, unknown>,
-        });
-        map?.addLayer({
+          });
+          map?.addLayer({
           id: "air-quality-overview-middle",
           type: "circle",
           source: GROUP_SOURCE_ID,
@@ -296,8 +324,8 @@ export function MapLibreGlobe({
             "circle-opacity": overviewLayerExpressions.middleOpacity,
             "circle-blur": 0.48,
           } as Record<string, unknown>,
-        });
-        map?.addLayer({
+          });
+          map?.addLayer({
           id: "air-quality-groups",
           type: "circle",
           source: GROUP_SOURCE_ID,
@@ -309,8 +337,8 @@ export function MapLibreGlobe({
             "circle-stroke-color": "rgba(255,255,255,0.62)",
             "circle-stroke-width": 0.8,
           } as Record<string, unknown>,
-        });
-        map?.addLayer({
+          });
+          map?.addLayer({
           id: "air-quality-group-labels",
           type: "symbol",
           source: GROUP_SOURCE_ID,
@@ -320,9 +348,9 @@ export function MapLibreGlobe({
             "text-size": 12,
           },
           paint: { "text-color": "#ffffff", "text-halo-color": "rgba(2,6,23,0.8)", "text-halo-width": 1.2 },
-        });
-        map?.addSource(HOTSPOT_SOURCE_ID, { type: "geojson", data: hotspotGeoJsonRef.current });
-        map?.addLayer({
+          });
+          map?.addSource(HOTSPOT_SOURCE_ID, { type: "geojson", data: hotspotGeoJsonRef.current });
+          map?.addLayer({
           id: "selected-hotspot-outer",
           type: "circle",
           source: HOTSPOT_SOURCE_ID,
@@ -332,8 +360,8 @@ export function MapLibreGlobe({
             "circle-opacity": ["get", "pulseOpacity"],
             "circle-blur": 0.78,
           } as Record<string, unknown>,
-        });
-        map?.addLayer({
+          });
+          map?.addLayer({
           id: "selected-hotspot-middle",
           type: "circle",
           source: HOTSPOT_SOURCE_ID,
@@ -343,8 +371,8 @@ export function MapLibreGlobe({
             "circle-opacity": 0.62,
             "circle-blur": 0.36,
           } as Record<string, unknown>,
-        });
-        map?.addLayer({
+          });
+          map?.addLayer({
           id: "selected-hotspot-core",
           type: "circle",
           source: HOTSPOT_SOURCE_ID,
@@ -355,9 +383,9 @@ export function MapLibreGlobe({
             "circle-stroke-color": "rgba(255,255,255,0.85)",
             "circle-stroke-width": 1.2,
           } as Record<string, unknown>,
-        });
-        map?.addSource(STATION_SOURCE_ID, { type: "geojson", data: stationGeoJsonRef.current });
-        map?.addLayer({
+          });
+          map?.addSource(STATION_SOURCE_ID, { type: "geojson", data: stationGeoJsonRef.current });
+          map?.addLayer({
           id: "air-quality-stations",
           type: "circle",
           source: STATION_SOURCE_ID,
@@ -369,23 +397,25 @@ export function MapLibreGlobe({
             "circle-stroke-color": "#ffffff",
             "circle-stroke-width": 1,
           },
-        });
-        map?.moveLayer(AIR_QUALITY_LAYER_ORDER[AIR_QUALITY_LAYER_ORDER.length - 1]);
-        map?.on("click", "air-quality-stations", (event) => {
-          const uid = event.features?.[0]?.properties?.uid;
-          const station = stationsRef.current.find((candidate) => candidate.uid === Number(uid));
-          if (station) onStationSelectRef.current(station);
-        });
-        map?.on("mouseenter", "air-quality-stations", () => {
-          if (map) map.getCanvas().style.cursor = "pointer";
-        });
-        map?.on("mouseleave", "air-quality-stations", () => {
-          if (map) map.getCanvas().style.cursor = "";
-        });
+          });
+          map?.moveLayer(AIR_QUALITY_LAYER_ORDER[AIR_QUALITY_LAYER_ORDER.length - 1]);
+          map?.on("click", "air-quality-stations", (event) => {
+            const uid = event.features?.[0]?.properties?.uid;
+            const station = stationsRef.current.find((candidate) => candidate.uid === Number(uid));
+            if (station) onStationSelectRef.current(station);
+          });
+          map?.on("mouseenter", "air-quality-stations", () => {
+            if (map) map.getCanvas().style.cursor = "pointer";
+          });
+          map?.on("mouseleave", "air-quality-stations", () => {
+            if (map) map.getCanvas().style.cursor = "";
+          });
+        } catch (error) {
+          triggerFatalFallback(error);
+        }
       });
-    } catch {
-      setInitError("MapLibre no pudo inicializarse.");
-      onUnavailableRef.current();
+    } catch (error) {
+      triggerFatalFallback(error);
     }
 
     return () => {
@@ -468,7 +498,7 @@ export function MapLibreGlobe({
     return () => window.clearInterval(interval);
   }, [panelOpen, reducedMotion, rotationPaused, userInteracted]);
 
-  return (
+  return fatalError ? null : (
     <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_50%_38%,#102033_0%,#06111f_46%,#020617_100%)]" aria-label="Globo 3D de calidad del aire">
       <div ref={containerRef} className="h-full w-full" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_42%,rgba(2,6,23,0.32)_78%,rgba(2,6,23,0.68)_100%)]" />
@@ -492,11 +522,6 @@ export function MapLibreGlobe({
           <div className="mt-1 text-sm font-semibold">Mayor nivel informado de {pollutantLabel(selectedPollutant)}</div>
           <div className="mt-1 text-xs text-white/65">AQI {Math.round(hotspot.maxAqi)} · {hotspot.category} · {hotspot.stationCount} est.</div>
           <p className="mt-2 text-[11px] leading-relaxed text-white/48">Resumen visual basado en estaciones disponibles; no representa toda la región.</p>
-        </div>
-      )}
-      {initError && (
-        <div className="absolute bottom-24 left-3 right-3 z-10 rounded-2xl border border-amber-200/20 bg-amber-300/10 px-3 py-2 text-sm text-amber-50 backdrop-blur-xl md:left-5 md:right-auto md:max-w-md">
-          {initError} Se conserva Leaflet como fallback.
         </div>
       )}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[min(92vw,34rem)] rounded-2xl border border-white/10 bg-slate-950/52 px-3 py-2 text-xs leading-relaxed text-white/58 backdrop-blur-xl">
