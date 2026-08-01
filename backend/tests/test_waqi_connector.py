@@ -563,6 +563,49 @@ def test_waqi_repository_deduplicates_national_regions() -> None:
     assert metadata["stations_deduplicated"] == 6
 
 
+def test_waqi_repository_filters_foreign_stations_from_national_view() -> None:
+    clear_waqi_station_cache()
+    map_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal map_requests
+        if request.url.path == "/v2/map/bounds/":
+            map_requests += 1
+            return httpx.Response(
+                200,
+                json={
+                    "status": "ok",
+                    "data": [
+                        {"uid": 1, "lat": -34.6345, "lon": -58.3631},
+                        {"uid": 2, "lat": -38.7487, "lon": -72.6208},
+                        {"uid": 3, "lat": -22.4428, "lon": -68.9325},
+                    ],
+                },
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={"status": "ok", "data": {"iaqi": {"pm10": {"v": 12}}}},
+            request=request,
+        )
+
+    repository = WaqiStationRepository(
+        token="token",
+        base_url="https://api.waqi.info",
+        bounds="0,0,1,1",
+        timeout_seconds=1,
+        transport=httpx.MockTransport(handler),
+    )
+
+    stations = repository.list_stations(region_id="argentina")
+    metadata = repository.last_metadata("argentina")
+
+    assert {station.external_id for station in stations} == {"1"}
+    assert metadata is not None
+    assert metadata["foreign_stations_filtered"] == 2
+    assert metadata["stations_returned"] == 1
+
+
 def test_waqi_repository_cache_is_independent_by_region() -> None:
     clear_waqi_station_cache()
     requested_bounds: list[str] = []

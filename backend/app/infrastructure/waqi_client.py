@@ -9,6 +9,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.application.ports import StationRepository
+from app.domain.argentina_boundary import filter_argentina_stations
 from app.domain.errors import ConfigurationError, InvalidSourcePayloadError, SourceUnavailableError
 from app.domain.models import Station
 from app.domain.regions import ALL_REGION_IDS, ARGENTINA_REGION, REGION_BY_ID, Region
@@ -118,7 +119,10 @@ class WaqiFeedResponse(BaseModel):
 _IAQI_KEYS = ("pm25", "pm10", "no2", "o3", "so2", "co")
 _CACHE_TTL_SECONDS = 600.0
 _CACHE_LOCK = Lock()
-_CACHE: dict[tuple[str, str, str, float, int], tuple[float, tuple[Station, ...]]] = {}
+_CACHE: dict[
+    tuple[str, str, str, float, int],
+    tuple[float, tuple[Station, ...], tuple[str, ...]],
+] = {}
 _META_LOCK = Lock()
 _LAST_METADATA: dict[str, dict[str, object]] = {}
 
@@ -234,12 +238,20 @@ class WaqiStationRepository(StationRepository):
 
         stations = tuple(stations_by_key.values())
         discovered = sum(_metadata_int(item, "stations_discovered") for item in region_summaries)
+        foreign_ids: set[str] = set()
+        for item in region_summaries:
+            foreign_ids_value = item.get("foreign_stations_ids")
+            if isinstance(foreign_ids_value, list):
+                for station_id in foreign_ids_value:
+                    if isinstance(station_id, str):
+                        foreign_ids.add(station_id)
         metadata = _metadata_for(
             ARGENTINA_REGION.id,
             ARGENTINA_REGION.name,
             stations,
             cache_hit=False,
             stations_discovered=discovered,
+            foreign_stations_ids=sorted(foreign_ids),
             unavailable_regions=unavailable_regions,
             regions=region_summaries,
         )
@@ -268,16 +280,18 @@ class WaqiStationRepository(StationRepository):
         )
         cached = self._get_cached(cache_key)
         if cached is not None:
+            stations, foreign_ids = cached
             self._set_metadata(
                 query_id,
                 _metadata_for(
                     query_id,
                     region.name if region else "Custom bounds",
-                    cached,
+                    stations,
                     cache_hit=True,
+                    foreign_stations_ids=list(foreign_ids),
                 ),
             )
-            return cached
+            return stations
 
         try:
             with httpx.Client(timeout=self._timeout_seconds, transport=self._transport) as client:
@@ -289,6 +303,10 @@ class WaqiStationRepository(StationRepository):
                 payload = response.json()
                 stations = parse_waqi_map_bounds_response(payload)
                 stations = tuple(_tag_station_region(station, region) for station in stations)
+                stations, foreign_stations = filter_argentina_stations(stations)
+                foreign_ids = tuple(
+                    f"{station.source_id}:{station.external_id}" for station in foreign_stations
+                )
                 enriched = self._enrich_stations(client, stations)
         except httpx.TimeoutException as exc:
             raise SourceUnavailableError("WAQI request timed out") from exc
@@ -297,7 +315,7 @@ class WaqiStationRepository(StationRepository):
         except httpx.HTTPError as exc:
             raise SourceUnavailableError("WAQI request failed") from exc
 
-        self._set_cached(cache_key, enriched)
+        self._set_cached(cache_key, enriched, foreign_ids)
         self._set_metadata(
             query_id,
             _metadata_for(
@@ -305,6 +323,7 @@ class WaqiStationRepository(StationRepository):
                 region.name if region else "Custom bounds",
                 enriched,
                 cache_hit=False,
+                foreign_stations_ids=list(foreign_ids),
             ),
         )
         return enriched
@@ -312,23 +331,24 @@ class WaqiStationRepository(StationRepository):
     def _get_cached(
         self,
         cache_key: tuple[str, str, str, float, int],
-    ) -> tuple[Station, ...] | None:
+    ) -> tuple[tuple[Station, ...], tuple[str, ...]] | None:
         with _CACHE_LOCK:
             cached = _CACHE.get(cache_key)
         if cached is None:
             return None
-        timestamp, stations = cached
+        timestamp, stations, foreign_ids = cached
         if monotonic() - timestamp > self._cache_ttl_seconds:
             return None
-        return stations
+        return stations, foreign_ids
 
     def _set_cached(
         self,
         cache_key: tuple[str, str, str, float, int],
         stations: tuple[Station, ...],
+        foreign_ids: tuple[str, ...],
     ) -> None:
         with _CACHE_LOCK:
-            _CACHE[cache_key] = (monotonic(), stations)
+            _CACHE[cache_key] = (monotonic(), stations, foreign_ids)
 
     def _set_metadata(self, query_id: str, metadata: dict[str, object]) -> None:
         with _META_LOCK:
@@ -450,6 +470,7 @@ def _metadata_for(
     cache_hit: bool,
     failed: bool = False,
     stations_discovered: int | None = None,
+    foreign_stations_ids: list[str] | None = None,
     unavailable_regions: list[str] | None = None,
     regions: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
@@ -464,6 +485,7 @@ def _metadata_for(
     )
     timestamps = [station.measured_at.isoformat() for station in stations if station.measured_at]
     discovered = len(stations) if stations_discovered is None else stations_discovered
+    foreign_ids = foreign_stations_ids or []
     return {
         "region_id": query_id,
         "region_name": name,
@@ -473,6 +495,8 @@ def _metadata_for(
         "stations_discovered": discovered,
         "stations_returned": len(stations),
         "stations_deduplicated": max(0, discovered - len(stations)),
+        "foreign_stations_filtered": len(foreign_ids),
+        "foreign_stations_ids": foreign_ids,
         "stations_with_data": len(with_data),
         "pollutants_available": pollutants,
         "timestamps_received": len(timestamps),

@@ -115,6 +115,7 @@ class StationQueryMetadataDto(BaseModel):
     stations_discovered: int
     stations_returned: int
     stations_deduplicated: int
+    foreign_stations_filtered: int = 0
     stations_with_data: int
     pollutants_available: list[str]
     timestamps_received: int

@@ -1,5 +1,6 @@
 import type { Station } from "@/types/airQuality";
 import { aqiToVisualHeatWeight } from "@/lib/aqiHeatScale";
+import { isFresh } from "@/lib/coverage";
 import { POLLUTANT_INFO } from "@/lib/pollutantInfo";
 
 export type PollutantKey = "pm25" | "pm10" | "no2" | "o3" | "so2" | "co";
@@ -25,11 +26,16 @@ export function pollutantValue(station: Station, pollutant: PollutantKey): numbe
   return value === undefined ? null : value;
 }
 
+// Los puntos termicos solo se generan para estaciones con datos FRESCOS
+// (politica de frescura unica: < 24 h). Las estaciones viejas o sin timestamp
+// siguen visibles como marcadores, pero no dibujan calor: no representan el
+// aire actual.
 export function heatPointsForPollutant(
   stations: Station[],
   pollutant: PollutantKey,
 ): HeatPoint[] {
   return stations.flatMap((station) => {
+    if (!isFresh(station)) return [];
     const value = pollutantValue(station, pollutant);
     if (value === null || !Number.isFinite(value)) return [];
     return [
@@ -75,6 +81,29 @@ export type HeatLayerConfig = {
   maxZoom: number;
 };
 
+// Máximo radio geográfico de influencia por estación. Más allá de este radio
+// el halo no se amplía: no se conectan estaciones lejanas entre sí.
+export function maxInfluenceRadiusKm(regionId: string, pointCount: number): number {
+  if (regionId === "argentina") return 20;
+  return pointCount < 4 ? 12 : 20;
+}
+
+export function pixelsPerKm(zoom: number, latitude: number = -34.6): number {
+  const metersPerPixel = (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / Math.pow(2, zoom);
+  return 1000 / metersPerPixel;
+}
+
+export function capRadiusPixels(
+  regionId: string,
+  pointCount: number,
+  baseRadius: number,
+  zoom: number,
+  latitude: number = -34.6,
+): number {
+  const maxInfluencePx = maxInfluenceRadiusKm(regionId, pointCount) * pixelsPerKm(zoom, latitude);
+  return Math.min(baseRadius, maxInfluencePx);
+}
+
 // Configuración efectiva de leaflet.heat por región y cobertura.
 // - Regional: manchas amplias y suaves (radio base 75 / blur 58), con halos
 //   más locales cuando hay pocas estaciones (0.7x) para no pintar
@@ -82,6 +111,8 @@ export type HeatLayerConfig = {
 // - Nacional: mucho más contenido; se priorizan marcadores y clusters.
 // - El radio se escala con el zoom para que el halo geográfico sea
 //   aproximadamente constante y desaparezca gradualmente al alejarse.
+// - El radio se limita además por un máximo de influencia por estación
+//   (ver maxInfluenceRadiusKm) para no conectar estaciones lejanas.
 // - maxZoom se ancla al zoom por defecto de la región: a ese zoom (y por
 //   encima) leaflet.heat usa intensidad plena (factor v = 1).
 export function heatLayerConfig(
@@ -92,14 +123,30 @@ export function heatLayerConfig(
 ): HeatLayerConfig | null {
   if (!shouldShowHeatmap(regionId, zoom, pointCount)) return null;
 
+  let radius: number;
+  let blur: number;
+  let minOpacity: number;
+  let maxZoom: number;
+
   if (regionId === "argentina") {
-    return { radius: 26, blur: 36, minOpacity: 0.12, maxZoom: 6 };
+    radius = 26;
+    blur = 36;
+    minOpacity = 0.12;
+    maxZoom = 6;
+  } else {
+    const localScale = pointCount < 4 ? 0.7 : 1;
+    const zoomScale = Math.pow(2, zoom - defaultZoom);
+    radius = Math.round(Math.min(110, 75 * localScale * zoomScale));
+    blur = Math.round(Math.min(85, 58 * localScale * zoomScale));
+    minOpacity = 0.2;
+    maxZoom = defaultZoom;
   }
 
-  const localScale = pointCount < 4 ? 0.7 : 1;
-  const zoomScale = Math.pow(2, zoom - defaultZoom);
-  const radius = Math.round(Math.min(110, 75 * localScale * zoomScale));
-  const blur = Math.round(Math.min(85, 58 * localScale * zoomScale));
+  const cappedRadius = capRadiusPixels(regionId, pointCount, radius, zoom);
+  if (cappedRadius < radius) {
+    blur = Math.max(14, Math.round(blur * (cappedRadius / radius)));
+    radius = Math.round(cappedRadius);
+  }
 
-  return { radius, blur, minOpacity: 0.2, maxZoom: defaultZoom };
+  return { radius, blur, minOpacity, maxZoom };
 }

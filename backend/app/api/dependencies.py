@@ -29,7 +29,7 @@ from app.application.use_cases import (
 from app.core.config import get_settings
 from app.db.session import SessionLocal, engine
 from app.domain.errors import ConfigurationError
-from app.domain.models import SourceStatusValue, Station
+from app.domain.models import Source, SourceStatusValue, Station
 from app.gis.repositories import InMemoryGeometryRepository
 from app.gis.services import SpatialService
 from app.infrastructure.postgis_geometry import PostGISGeometryRepository
@@ -45,6 +45,7 @@ from app.infrastructure.repositories import (
 )
 from app.infrastructure.seed_data import SPATIAL_STATIONS
 from app.infrastructure.sources.demo import DEMO_SOURCE, DemoConnector
+from app.infrastructure.sources.openaq import OpenAQConnector
 from app.infrastructure.sources.waqi import WaqiConnector, waqi_source
 from app.infrastructure.waqi_client import WaqiStationRepository
 from app.measurements.service import ConnectorMeasurementProvider
@@ -55,8 +56,25 @@ _measurement_repository = InMemoryMeasurementRepository()
 _station_repository = InMemoryStationRepository()
 _time_series_repository = InMemoryTimeSeriesRepository(_measurement_repository)
 _zone_snapshot_repository = InMemoryZoneSnapshotRepository()
+
+
+def _source_status_sources(
+    *,
+    openaq_enabled: bool,
+    openaq_api_key: str | None,
+) -> tuple[Source, ...]:
+    sources = [waqi_source(status=SourceStatusValue.NOT_CONFIGURED), DEMO_SOURCE]
+    if openaq_enabled:
+        connector = OpenAQConnector(api_key=openaq_api_key)
+        sources.append(connector.source())
+    return tuple(sources)
+
+
 _source_status_repository = InMemorySourceStatusRepository(
-    (waqi_source(status=SourceStatusValue.NOT_CONFIGURED), DEMO_SOURCE)
+    _source_status_sources(
+        openaq_enabled=get_settings().openaq_enabled,
+        openaq_api_key=get_settings().openaq_api_key,
+    )
 )
 
 

@@ -44,6 +44,7 @@ export interface StationQueryMetadata {
   stations_discovered: number;
   stations_returned: number;
   stations_deduplicated: number;
+  foreign_stations_filtered: number;
   stations_with_data: number;
   pollutants_available: string[];
   timestamps_received: number;

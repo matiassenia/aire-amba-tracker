@@ -62,7 +62,7 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
   },
   no2: {
     key: "no2",
-    shortName: "NO2",
+    shortName: "NO₂",
     fullName: "Dioxido de nitrogeno",
     description:
       "Gas vinculado a procesos de combustion. Suele variar cerca de avenidas, zonas con mucho transito o actividad industrial.",
@@ -70,17 +70,17 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     whyMonitored: "Se monitorea como indicador de contaminacion asociada a combustion y movilidad urbana.",
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#fb7185",
-    ariaLabel: "Informacion sobre NO2, dioxido de nitrogeno",
+    ariaLabel: "Informacion sobre NO₂, dioxido de nitrogeno",
     whatYouSee:
-      "Este mapa muestra el índice de calidad del aire informado para NO2 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+      "Este mapa muestra el índice de calidad del aire informado para NO₂ e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
     causes: ["Motores de combustión", "Tránsito intenso", "Industrias", "Centrales térmicas"],
     healthNote: "Irrita el sistema respiratorio.",
     stationExplanation:
-      "NO2 elevado suele asociarse a motores de combustión o tránsito intenso cercano.",
+      "NO₂ elevado suele asociarse a motores de combustión o tránsito intenso cercano.",
   },
   o3: {
     key: "o3",
-    shortName: "O3",
+    shortName: "O₃",
     fullName: "Ozono troposferico",
     description:
       "Ozono a nivel del suelo. No se emite principalmente de forma directa: se forma por reacciones entre contaminantes y luz solar.",
@@ -88,9 +88,9 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     whyMonitored: "Se monitorea porque puede aumentar en condiciones de sol y presencia de precursores quimicos.",
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#a78bfa",
-    ariaLabel: "Informacion sobre O3, ozono troposferico",
+    ariaLabel: "Informacion sobre O₃, ozono troposferico",
     whatYouSee:
-      "Este mapa muestra el índice de calidad del aire informado para O3 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+      "Este mapa muestra el índice de calidad del aire informado para O₃ e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
     causes: [
       "Contaminante secundario",
       "Reacciones fotoquímicas",
@@ -99,11 +99,11 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     ],
     healthNote: "Puede generar irritación pulmonar.",
     stationExplanation:
-      "O3 elevado suele asociarse a reacciones fotoquímicas con luz solar intensa y tránsito urbano.",
+      "O₃ elevado suele asociarse a reacciones fotoquímicas con luz solar intensa y tránsito urbano.",
   },
   so2: {
     key: "so2",
-    shortName: "SO2",
+    shortName: "SO₂",
     fullName: "Dioxido de azufre",
     description:
       "Gas asociado a la combustion de combustibles con azufre y a ciertas actividades industriales.",
@@ -111,13 +111,13 @@ export const POLLUTANT_INFO: Record<PollutantKey, PollutantInfo> = {
     whyMonitored: "Se monitorea para detectar aportes de combustion e industria cuando hay estaciones disponibles.",
     waqiNote: "El valor mostrado proviene de la estacion consultada a traves de WAQI.",
     visualColor: "#22c55e",
-    ariaLabel: "Informacion sobre SO2, dioxido de azufre",
+    ariaLabel: "Informacion sobre SO₂, dioxido de azufre",
     whatYouSee:
-      "Este mapa muestra el índice de calidad del aire informado para SO2 e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
+      "Este mapa muestra el índice de calidad del aire informado para SO₂ e interpolado visualmente entre las estaciones disponibles. Los colores representan la intensidad del índice estimada a partir de estaciones reales. Los puntos corresponden a estaciones de monitoreo.",
     causes: ["Combustibles fósiles", "Refinerías", "Procesos industriales", "Generación eléctrica"],
     healthNote: "Puede agravar enfermedades respiratorias.",
     stationExplanation:
-      "SO2 elevado suele asociarse a combustibles fósiles o actividad industrial cercana.",
+      "SO₂ elevado suele asociarse a combustibles fósiles o actividad industrial cercana.",
   },
   co: {
     key: "co",

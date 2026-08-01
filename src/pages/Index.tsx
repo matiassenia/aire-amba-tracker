@@ -1,16 +1,14 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { EnvironmentalMap } from "../components/EnvironmentalMap";
+import { EducationGuide } from "@/components/layout/EducationGuide";
 import { useAirQualityData } from "@/hooks/useAirQualityData";
 import type { Scope, Zone } from "@/types/airQuality";
-import { pollutantInfo } from "@/lib/pollutantInfo";
-import type { PollutantKey } from "@/lib/pollutantHeat";
-
-const POLLUTANT_KEYS: PollutantKey[] = ["pm25", "pm10", "no2", "o3", "so2", "co"];
 
 export default function Index() {
   const [scope, setScope] = useState<Scope>("argentina");
   const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
   const [educationOpen, setEducationOpen] = useState(false);
+  const guideTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const { stations, zones, regions, selectedRegion, metadata, lastUpdated, isLoading, errorMessage } =
     useAirQualityData(scope);
@@ -41,7 +39,7 @@ export default function Index() {
   return (
     <div className="min-h-screen w-full bg-background app-surface">
       <header className="px-3 pb-1 pt-3 sm:px-4">
-        <div className="mx-auto flex max-w-[1800px] items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/42 px-4 py-2 shadow-xl backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-[1800px] items-center justify-between gap-3 rounded-[1.5rem] border border-white/10 bg-slate-950/42 px-4 py-2 shadow-xl backdrop-blur-2xl sm:rounded-full">
           <div>
             <h1 className="text-base font-semibold leading-tight text-white">Aire Argentina</h1>
             <p className="text-xs text-white/58">
@@ -49,10 +47,20 @@ export default function Index() {
             </p>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 sm:flex">
-            <div className="text-sm font-semibold">{summary.label}</div>
-            <div className="h-1 w-1 rounded-full bg-white/35" />
-            <div className="text-xs text-white/62">{isLoading ? "Actualizando" : "Datos reales"}</div>
+          <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 sm:flex">
+              <div className="text-sm font-semibold">{summary.label}</div>
+              <div className="h-1 w-1 rounded-full bg-white/35" />
+              <div className="text-xs text-white/62">{isLoading ? "Actualizando" : "Datos reales"}</div>
+            </div>
+            <button
+              ref={guideTriggerRef}
+              type="button"
+              onClick={() => setEducationOpen(true)}
+              className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/72 transition hover:bg-white/12 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70 sm:text-sm"
+            >
+              Guía para leer el mapa
+            </button>
           </div>
         </div>
       </header>
@@ -73,7 +81,6 @@ export default function Index() {
                 metadata={metadata}
                 isLoading={isLoading}
                 selectedZoneId={selectedZoneId}
-                onOpenEducation={() => setEducationOpen((open) => !open)}
                 onZoneClick={(z: Zone) =>
                   setSelectedZone((prev) => (prev?.id === z.id ? null : z))
                 }
@@ -99,36 +106,12 @@ export default function Index() {
             </div>
 
             {educationOpen && (
-              <section className="mx-auto mt-3 max-w-6xl rounded-[1.75rem] border border-white/10 bg-slate-950/42 p-4 text-white shadow-xl backdrop-blur-2xl animate-fade-in">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold">Entender los contaminantes</h2>
-                    <p className="mt-1 text-sm text-white/62">Guía rápida de lectura para los valores informados por WAQI.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEducationOpen(false)}
-                    className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-sm text-white/72 transition hover:bg-white/14 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
-                  >
-                    Cerrar
-                  </button>
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {POLLUTANT_KEYS.map((key) => {
-                    const info = pollutantInfo(key);
-                    return (
-                      <article key={key} className="rounded-2xl border border-white/10 bg-white/[0.055] p-3">
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: info.visualColor }} />
-                          <h3 className="font-semibold text-white">{info.shortName}</h3>
-                          <span className="truncate text-sm text-white/60">{info.fullName}</span>
-                        </div>
-                        <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-white/70">{info.description}</p>
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
+              <EducationGuide
+                onClose={() => {
+                  setEducationOpen(false);
+                  window.setTimeout(() => guideTriggerRef.current?.focus(), 0);
+                }}
+              />
             )}
           </section>
       </main>

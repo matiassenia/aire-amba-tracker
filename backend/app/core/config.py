@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     waqi_token: str | None = None
     waqi_timeout_seconds: float = 5.0
     waqi_bounds: str = "-35.0,-59.0,-34.3,-58.0"
+    openaq_api_key: str | None = None
+    openaq_base_url: str = "https://api.openaq.org/v3"
+    openaq_timeout_seconds: float = 5.0
+    openaq_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
@@ -45,6 +49,13 @@ class Settings(BaseSettings):
     def validate_timeout(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("waqi timeout must be positive")
+        return value
+
+    @field_validator("openaq_timeout_seconds")
+    @classmethod
+    def validate_openaq_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("openaq timeout must be positive")
         return value
 
     @field_validator("cors_origins", mode="before")

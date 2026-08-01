@@ -1,5 +1,5 @@
 import React, { Suspense } from "react";
-import { Info, X } from "lucide-react";
+import { X } from "lucide-react";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { StaticMapFallback } from "@/components/map/StaticMapFallback";
 import type { Region, Scope, Station, StationQueryMetadata, Zone } from "@/types/airQuality";
@@ -14,7 +14,14 @@ import {
 } from "@/lib/pollutantHeat";
 import { aqiHeatGradientCss, AQI_HEAT_LEGEND } from "@/lib/aqiHeatScale";
 import { pollutantInfo } from "@/lib/pollutantInfo";
-import { stationFreshness } from "@/lib/stationFreshness";
+import { stationFreshness, RECENT_AFTER_HOURS } from "@/lib/stationFreshness";
+import {
+  coverageConfidenceLabel,
+  coverageConfidenceMessage,
+  formatDistanceKm,
+  pointCoverage,
+  stationCoverageInfo,
+} from "@/lib/coverage";
 
 const LeafletMap = React.lazy(() =>
   import("@/components/map/LeafletMap").then((mod) => ({ default: mod.LeafletMap })),
@@ -67,24 +74,80 @@ type EnvironmentalMapProps = {
   isLoading?: boolean;
   selectedZoneId: string | null;
   onZoneClick: (z: Zone) => void;
-  onOpenEducation?: () => void;
+};
+
+const POLLUTANT_PANEL_COPY: Record<
+  PollutantKey,
+  {
+    analogy: string;
+    low: string;
+    high: string;
+    notMeaning: string;
+    mapRepresentation: string;
+  }
+> = {
+  pm25: {
+    analogy: "Polvo invisible extremadamente pequeño.",
+    low: "Menor presencia de partículas finas en el aire.",
+    high: "Mayor presencia de partículas finas cerca de la estación.",
+    notMeaning: "No permite saber por sí solo de dónde proviene.",
+    mapRepresentation: "El color muestra la intensidad estimada para PM2.5 entre estaciones.",
+  },
+  pm10: {
+    analogy: "Polvo más grande que puede levantarse del suelo.",
+    low: "Menor presencia de partículas gruesas en suspensión.",
+    high: "Mayor presencia de polvo o partículas cerca de la estación.",
+    notMeaning: "No identifica una obra, calle o fuente puntual específica.",
+    mapRepresentation: "El color muestra la intensidad estimada para PM10 entre estaciones.",
+  },
+  no2: {
+    analogy: "Una señal típica de combustión urbana.",
+    low: "Menor presencia de dióxido de nitrógeno en el aire.",
+    high: "Mayor presencia cerca de tránsito, motores o combustión.",
+    notMeaning: "No prueba por sí solo qué vehículo o industria lo generó.",
+    mapRepresentation: "El color muestra la intensidad estimada para NO₂ entre estaciones.",
+  },
+  o3: {
+    analogy: "Un contaminante que se cocina con sol y precursores.",
+    low: "Menor presencia de ozono a nivel del suelo.",
+    high: "Mayor presencia asociada a reacciones químicas con luz solar.",
+    notMeaning: "No significa que haya una fuente directa de ozono en ese punto.",
+    mapRepresentation: "El color muestra la intensidad estimada para O₃ entre estaciones.",
+  },
+  so2: {
+    analogy: "Una huella de combustibles con azufre.",
+    low: "Menor presencia de dióxido de azufre en el aire.",
+    high: "Mayor presencia cerca de combustión o procesos industriales compatibles.",
+    notMeaning: "No identifica por sí solo una planta o actividad concreta.",
+    mapRepresentation: "El color muestra la intensidad estimada para SO₂ entre estaciones.",
+  },
+  co: {
+    analogy: "Una señal de combustión incompleta.",
+    low: "Menor presencia de monóxido de carbono en el aire.",
+    high: "Mayor presencia asociada a combustión incompleta cerca de la estación.",
+    notMeaning: "No permite ubicar por sí solo la fuente exacta.",
+    mapRepresentation: "El color muestra la intensidad estimada para CO entre estaciones.",
+  },
 };
 
 function StationPanel({
   station,
   selectedPollutant,
   regionName,
+  stations,
   onClose,
 }: {
   station: Station;
   selectedPollutant: PollutantKey;
   regionName: string;
+  stations: Station[];
   onClose: () => void;
 }) {
   const freshness = stationFreshness(station.measured_at ?? station.time);
   const selectedValue = pollutantValue(station, selectedPollutant);
   const available = POLLUTANT_KEYS.filter((key) => pollutantValue(station, key) !== null);
   const missing = POLLUTANT_KEYS.filter((key) => pollutantValue(station, key) === null);
+  const coverage = stationCoverageInfo(station, stations);
 
   return (
     <section
@@ -145,7 +208,9 @@ function StationPanel({
             "rounded-full border px-3 py-1",
             freshness.status === "stale"
               ? "border-amber-200/25 bg-amber-300/10 text-amber-50"
-              : "border-white/10 bg-white/[0.06] text-white/75",
+              : freshness.status === "aging"
+                ? "border-amber-200/20 bg-amber-200/5 text-amber-100/85"
+                : "border-white/10 bg-white/[0.06] text-white/75",
           )}
         >
           {freshness.label}
@@ -157,9 +222,55 @@ function StationPanel({
 
       {freshness.status === "stale" && (
         <p className="mt-3 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90">
-          Esta medición puede estar desactualizada.
+          Esta medición puede estar desactualizada y no representa el aire actual.
         </p>
       )}
+
+      {freshness.status === "aging" && (
+        <p className="mt-3 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90">
+          Esta medición tiene más de {RECENT_AFTER_HOURS} h: sigue contando para cobertura, pero
+          está envejeciendo.
+        </p>
+      )}
+
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
+            Cobertura
+          </div>
+          <span
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-xs",
+              coverage.directConfidence === "high"
+                ? "border-emerald-200/25 bg-emerald-300/10 text-emerald-50"
+                : coverage.directConfidence === "none"
+                  ? "border-red-200/25 bg-red-300/10 text-red-50"
+                  : "border-amber-200/25 bg-amber-300/10 text-amber-50",
+            )}
+          >
+            {coverageConfidenceLabel(coverage.directConfidence)}
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-white/78">
+          {coverageConfidenceMessage(coverage.directConfidence)}
+        </p>
+        {coverage.nearestOther && (
+          <p className="mt-2 text-sm leading-relaxed text-white/75">
+            Estación más cercana:{" "}
+            <span className="text-white">
+              "{coverage.nearestOther.station.name}" a{" "}
+              {formatDistanceKm(coverage.nearestOther.distanceKm)}
+            </span>
+          </p>
+        )}
+        {coverage.totalStations > 1 && (
+          <p className="mt-2 text-xs leading-relaxed text-white/55">
+            Otras estaciones en la región:{" "}
+            {coverage.withinRadii[5]} a &lt;5 km · {coverage.withinRadii[10]} a &lt;10 km ·{" "}
+            {coverage.withinRadii[20]} a &lt;20 km
+          </p>
+        )}
+      </div>
 
       <div className="mt-4">
         <div className="text-sm font-medium text-white/80">Disponibles</div>
@@ -196,18 +307,21 @@ function StationPanel({
 
 function PollutantInfoPanel({
   pollutant,
-  availableCount,
   onClose,
 }: {
   pollutant: PollutantKey;
-  availableCount: number;
   onClose: () => void;
 }) {
   const info = pollutantInfo(pollutant);
+  const copy = POLLUTANT_PANEL_COPY[pollutant];
+
   return (
     <section
-      aria-label={`Información sobre ${info.shortName}`}
-      className="fixed inset-x-3 bottom-20 z-40 max-h-[62vh] overflow-y-auto rounded-[1.65rem] border border-white/10 bg-slate-950/82 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in md:absolute md:bottom-auto md:left-5 md:right-auto md:top-28 md:w-[23rem]"
+      aria-label={`Información de ${info.shortName}`}
+      className={cn(
+        "fixed inset-x-3 bottom-20 z-40 max-h-[48vh] overflow-y-auto rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in",
+        "md:absolute md:bottom-auto md:left-5 md:right-auto md:top-20 md:w-[22rem] md:max-h-[calc(100%-7rem)]",
+      )}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -215,6 +329,7 @@ function PollutantInfoPanel({
             {info.shortName}
           </div>
           <h2 className="text-lg font-semibold text-white">{info.fullName}</h2>
+          <p className="mt-1 text-sm text-white/62">{copy.analogy}</p>
         </div>
         <button
           type="button"
@@ -222,53 +337,38 @@ function PollutantInfoPanel({
           className="rounded-full border border-white/10 bg-white/8 p-2 text-white/70 transition hover:bg-white/15 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
           aria-label="Cerrar información del contaminante"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden />
         </button>
       </div>
 
-      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
-        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
-          ¿Qué estás viendo?
+      <dl className="mt-3 grid gap-2 text-sm leading-relaxed">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+          <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">Qué es</dt>
+          <dd className="mt-1 text-white/76">{info.description}</dd>
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-white/78">{info.whatYouSee}</p>
-      </div>
-
-      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
-        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
-          ¿A qué se debe?
+        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+          <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">Fuentes frecuentes</dt>
+          <dd className="mt-1 text-white/76">{info.commonSources}</dd>
         </div>
-        <ul className="mt-2 grid gap-1.5 text-sm text-white/75">
-          {info.causes.map((cause) => (
-            <li key={cause} className="flex items-start gap-2">
-              <span
-                className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: info.visualColor }}
-              />
-              {cause}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-3 text-xs leading-relaxed text-white/55">
-          Estas son fuentes habituales asociadas al contaminante. La plataforma no determina la
-          causa específica de esta medición.
-        </p>
-        <p className="mt-2 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90">
-          {info.healthNote}
-        </p>
-      </div>
-
-      <div className="mt-3 rounded-2xl border border-cyan-200/15 bg-cyan-200/8 px-3 py-2 text-sm text-cyan-50/85">
-        Visualización interpolada a partir de las estaciones disponibles. Las áreas entre
-        estaciones no representan mediciones directas.
-        <p className="mt-1.5 text-xs leading-relaxed text-cyan-50/70">
-          La intensidad visual se amplifica para facilitar la lectura del mapa; la categoría
-          indicada corresponde al índice AQI informado.
-        </p>
-      </div>
-
-      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/75">
-        Disponible en {availableCount} estaciones de esta región.
-      </div>
+        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1">
+          <div className="rounded-2xl border border-emerald-200/15 bg-emerald-200/8 p-3">
+            <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-100/70">Cuando está bajo</dt>
+            <dd className="mt-1 text-white/76">{copy.low}</dd>
+          </div>
+          <div className="rounded-2xl border border-amber-200/15 bg-amber-200/8 p-3">
+            <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-100/75">Cuando está alto</dt>
+            <dd className="mt-1 text-white/76">{copy.high}</dd>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+          <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">Lo que no significa</dt>
+          <dd className="mt-1 text-white/76">{copy.notMeaning}</dd>
+        </div>
+        <div className="rounded-2xl border border-cyan-200/15 bg-cyan-200/8 p-3">
+          <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/70">Cómo se representa en el mapa</dt>
+          <dd className="mt-1 text-white/76">{copy.mapRepresentation}</dd>
+        </div>
+      </dl>
     </section>
   );
 }
@@ -319,11 +419,10 @@ export function EnvironmentalMap({
   isLoading = false,
   selectedZoneId,
   onZoneClick,
-  onOpenEducation,
 }: EnvironmentalMapProps) {
   const [selectedPollutant, setSelectedPollutant] = React.useState<PollutantKey>("pm10");
   const [selectedStation, setSelectedStation] = React.useState<Station | null>(null);
-  const [infoOpen, setInfoOpen] = React.useState(true);
+  const [pollutantPanelOpen, setPollutantPanelOpen] = React.useState(true);
 
   const fallbackMap = (
     <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />
@@ -352,6 +451,11 @@ export function EnvironmentalMap({
     if (scope === "argentina") return "Las áreas sin estaciones no representan mediciones.";
     return null;
   }, [heatPointCount, isLoading, metadata?.coverage_partial, scope, selectedPollutantLabel, stations.length]);
+
+  const regionCoverage = React.useMemo(() => {
+    if (isLoading || stations.length === 0 || !selectedRegion) return null;
+    return pointCoverage(selectedRegion.center[0], selectedRegion.center[1], stations);
+  }, [isLoading, selectedRegion, stations]);
 
   return (
     <div
@@ -386,7 +490,10 @@ export function EnvironmentalMap({
               <button
                 key={pollutant.key}
                 type="button"
-                onClick={() => setSelectedPollutant(pollutant.key)}
+                onClick={() => {
+                  setSelectedPollutant(pollutant.key);
+                  setPollutantPanelOpen(true);
+                }}
                 aria-pressed={isSelected}
                 className={cn(
                   "min-h-10 whitespace-nowrap rounded-full px-3.5 text-sm font-medium transition duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-200/70",
@@ -400,32 +507,25 @@ export function EnvironmentalMap({
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => {
-              setInfoOpen((open) => !open);
-            }}
-            className="ml-1 min-h-10 rounded-full border border-white/10 bg-white/8 px-3 text-white/75 transition hover:bg-white/14 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
-            aria-label={`Información sobre ${selectedPollutantLabel}`}
-          >
-            <Info className="h-4 w-4" />
-          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setInfoOpen(false);
-            onOpenEducation?.();
-          }}
-          className="pointer-events-auto w-fit rounded-full border border-white/10 bg-slate-950/42 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
-        >
-          Entender los contaminantes
-        </button>
 
         {coverageMessage && (
           <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
             {coverageMessage}
+          </div>
+        )}
+
+        {metadata && metadata.foreign_stations_filtered > 0 && (
+          <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
+            Se descartaron {metadata.foreign_stations_filtered} estaciones fuera de Argentina.
+          </div>
+        )}
+
+        {!coverageMessage && regionCoverage?.nearest && (
+          <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
+            Estación más cercana al centro de la región: "{regionCoverage.nearest.station.name}" a{" "}
+            {formatDistanceKm(regionCoverage.nearest.distanceKm)} ·{" "}
+            {coverageConfidenceLabel(regionCoverage.confidence)}
           </div>
         )}
       </div>
@@ -436,12 +536,8 @@ export function EnvironmentalMap({
         </div>
       </div>
 
-      {infoOpen && (
-        <PollutantInfoPanel
-          pollutant={selectedPollutant}
-          availableCount={heatPointCount}
-          onClose={() => setInfoOpen(false)}
-        />
+      {pollutantPanelOpen && (
+        <PollutantInfoPanel pollutant={selectedPollutant} onClose={() => setPollutantPanelOpen(false)} />
       )}
 
       {selectedStation && (
@@ -449,6 +545,7 @@ export function EnvironmentalMap({
           station={selectedStation}
           selectedPollutant={selectedPollutant}
           regionName={selectedRegion?.name ?? "Región no informada"}
+          stations={stations}
           onClose={() => setSelectedStation(null)}
         />
       )}

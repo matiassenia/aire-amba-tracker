@@ -3,11 +3,15 @@ import type { Station } from "@/types/airQuality";
 import { aqiToVisualHeatWeight } from "./aqiHeatScale";
 import {
   availablePollutants,
+  capRadiusPixels,
   heatLayerConfig,
   heatPointsForPollutant,
+  maxInfluenceRadiusKm,
   pollutantValue,
   shouldShowHeatmap,
 } from "./pollutantHeat";
+
+const FRESH_ISO = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
 const stations: Station[] = [
   {
@@ -16,6 +20,7 @@ const stations: Station[] = [
     lat: -34.6,
     lon: -58.4,
     aqi: null,
+    measured_at: FRESH_ISO,
     iaqi: { pm10: 22, no2: null },
   },
   {
@@ -24,6 +29,7 @@ const stations: Station[] = [
     lat: -34.7,
     lon: -58.5,
     aqi: null,
+    measured_at: FRESH_ISO,
     iaqi: { pm10: null, co: 1.2 },
   },
   {
@@ -32,6 +38,7 @@ const stations: Station[] = [
     lat: -34.8,
     lon: -58.6,
     aqi: null,
+    measured_at: FRESH_ISO,
     iaqi: { pm10: NaN },
   },
 ];
@@ -49,9 +56,23 @@ describe("pollutant heat helpers", () => {
     expect(heatPointsForPollutant(stations, "pm10")).toHaveLength(1);
 
     const nanOnly: Station[] = [
-      { uid: 9, name: "NaN", lat: -34, lon: -58, aqi: null, iaqi: { pm10: NaN } },
+      { uid: 9, name: "NaN", lat: -34, lon: -58, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: NaN } },
     ];
     expect(heatPointsForPollutant(nanOnly, "pm10")).toEqual([]);
+  });
+
+  it("excludes stale and unknown stations from the heatmap", () => {
+    const staleIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const mixed: Station[] = [
+      { uid: 1, name: "fresca", lat: -34.6, lon: -58.4, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: 22 } },
+      { uid: 2, name: "vieja", lat: -34.7, lon: -58.5, aqi: null, measured_at: staleIso, iaqi: { pm10: 30 } },
+      { uid: 3, name: "sin fecha", lat: -34.8, lon: -58.6, aqi: null, iaqi: { pm10: 40 } },
+    ];
+
+    const points = heatPointsForPollutant(mixed, "pm10");
+
+    expect(points).toHaveLength(1);
+    expect(points[0].station.uid).toBe(1);
   });
 
   it("preserves real station coordinates in heat points", () => {
@@ -70,7 +91,7 @@ describe("pollutant heat helpers", () => {
 
   it("does not escalate the highest value of a small set to the top of the scale", () => {
     const lowSet: Station[] = [
-      { uid: 1, name: "low", lat: -34.6, lon: -58.4, aqi: null, iaqi: { pm10: 60 } },
+      { uid: 1, name: "low", lat: -34.6, lon: -58.4, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: 60 } },
     ];
 
     const [point] = heatPointsForPollutant(lowSet, "pm10");
@@ -82,12 +103,12 @@ describe("pollutant heat helpers", () => {
 
   it("keeps intensity comparable across sets of different sizes", () => {
     const small: Station[] = [
-      { uid: 1, name: "a", lat: -34.6, lon: -58.4, aqi: null, iaqi: { pm10: 120 } },
+      { uid: 1, name: "a", lat: -34.6, lon: -58.4, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: 120 } },
     ];
     const large: Station[] = [
-      { uid: 1, name: "a", lat: -34.6, lon: -58.4, aqi: null, iaqi: { pm10: 120 } },
-      { uid: 2, name: "b", lat: -34.7, lon: -58.5, aqi: null, iaqi: { pm10: 20 } },
-      { uid: 3, name: "c", lat: -34.8, lon: -58.6, aqi: null, iaqi: { pm10: 30 } },
+      { uid: 1, name: "a", lat: -34.6, lon: -58.4, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: 120 } },
+      { uid: 2, name: "b", lat: -34.7, lon: -58.5, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: 20 } },
+      { uid: 3, name: "c", lat: -34.8, lon: -58.6, aqi: null, measured_at: FRESH_ISO, iaqi: { pm10: 30 } },
     ];
 
     const smallIntensity = heatPointsForPollutant(small, "pm10")[0].intensity;
@@ -179,5 +200,37 @@ describe("heatLayerConfig", () => {
     const zoomedOut = heatLayerConfig("amba", 4, 8, 9)!;
     expect(zoomedOut.radius).toBeLessThan(atDefault.radius);
     expect(zoomedOut.blur).toBeLessThan(atDefault.blur);
+  });
+});
+
+describe("maxInfluenceRadiusKm and capRadiusPixels", () => {
+  it("keeps a small local halo for one, two or three stations", () => {
+    const single = heatLayerConfig("amba", 1, 9, 9)!;
+    const full = heatLayerConfig("amba", 4, 9, 9)!;
+    expect(single.radius).toBeLessThan(full.radius);
+  });
+
+  it("caps the national halo so distant stations are never connected", () => {
+    const national = heatLayerConfig("argentina", 6, 7, 4)!;
+    expect(national.radius).toBeLessThan(26);
+  });
+
+  it("caps the halo harder at lower zoom levels", () => {
+    const atDefault = heatLayerConfig("amba", 1, 9, 9)!;
+    const zoomedOut = heatLayerConfig("amba", 1, 8, 9)!;
+    expect(zoomedOut.radius).toBeLessThan(atDefault.radius);
+  });
+
+  it("does not cap a dense regional set at its default zoom", () => {
+    const dense = heatLayerConfig("amba", 4, 9, 9)!;
+    expect(dense.radius).toBe(75);
+    expect(dense.blur).toBe(58);
+  });
+
+  it("keeps the maximum influence radius geographically bounded", () => {
+    const maxInfluenceKm = maxInfluenceRadiusKm("argentina", 6);
+    expect(maxInfluenceKm).toBeGreaterThan(0);
+    const radiusPx = capRadiusPixels("argentina", 6, 100, 7);
+    expect(radiusPx).toBeLessThan(100);
   });
 });
