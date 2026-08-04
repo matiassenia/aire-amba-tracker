@@ -13,6 +13,7 @@ import {
   type PollutantKey,
 } from "@/lib/pollutantHeat";
 import { clusterStations, shouldClusterStations } from "@/lib/stationClusters";
+import { historicalHeatPointsForPollutant, type MapViewMode } from "@/lib/historicalThermal";
 import { useEffect, useMemo, useState } from "react";
 import { useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -22,6 +23,7 @@ interface LeafletMapProps {
   zones: Zone[];
   region: Region | null;
   selectedPollutant: PollutantKey;
+  viewMode?: MapViewMode;
   selectedStationUid?: number | null;
   selectedZoneId?: string | null;
   onStationSelect: (station: Station) => void;
@@ -52,6 +54,7 @@ export function LeafletMap({
   zones,
   region,
   selectedPollutant,
+  viewMode = "current",
   selectedStationUid,
   selectedZoneId,
   onStationSelect,
@@ -66,9 +69,14 @@ export function LeafletMap({
     () => heatPointsForPollutant(stations, selectedPollutant),
     [stations, selectedPollutant]
   );
+  const historicalHeatPoints = useMemo(
+    () => historicalHeatPointsForPollutant(stations, selectedPollutant),
+    [stations, selectedPollutant],
+  );
+  const visibleHeatPoints = viewMode === "latest" ? historicalHeatPoints : heatPoints;
   const heatConfig = useMemo(
-    () => heatLayerConfig(regionId, heatPoints.length, zoom, region?.default_zoom ?? 9),
-    [regionId, heatPoints.length, zoom, region?.default_zoom]
+    () => heatLayerConfig(regionId, visibleHeatPoints.length, zoom, region?.default_zoom ?? 9),
+    [regionId, visibleHeatPoints.length, zoom, region?.default_zoom]
   );
   const useClusters = shouldClusterStations(regionId, zoom, stations.length);
 
@@ -113,7 +121,7 @@ export function LeafletMap({
         <Pane name="fx" style={{ zIndex: 450, pointerEvents: "none" }}>
           {heatConfig && (
             <HeatLayer
-              points={heatPoints}
+              points={visibleHeatPoints}
               radius={heatConfig.radius}
               blur={heatConfig.blur}
               maxZoom={heatConfig.maxZoom}

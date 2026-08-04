@@ -51,9 +51,11 @@ export const AMBA_HOTSPOT_CAMERA_ZOOM = 7;
 export const AIR_QUALITY_LAYER_ORDER = [
   "cartoDark",
   "air-quality-heatmap",
+  "air-quality-historical-heatmap",
   "air-quality-overview-outer",
   "air-quality-overview-middle",
   "air-quality-groups",
+  "air-quality-historical-overview",
   "selected-hotspot-outer",
   "selected-hotspot-middle",
   "selected-hotspot-core",

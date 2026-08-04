@@ -218,6 +218,28 @@ describe("selector de contaminantes", () => {
     expect(screen.getByText("Sin estaciones recientes para interpolar")).toBeInTheDocument();
   });
 
+  it("activa el modo Últimas mediciones desde el selector y cambia la leyenda", async () => {
+    renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
+    fireEvent.click(await screen.findByRole("button", { name: "Últimas mediciones" }));
+    expect(screen.getByText("Visualización de últimas mediciones")).toBeInTheDocument();
+    expect(screen.getAllByText("Últimas mediciones disponibles").length).toBeGreaterThan(0);
+    expect(screen.getByText(/No representa la calidad del aire actual/)).toBeInTheDocument();
+  });
+
+  it("Ver últimas mediciones activa el modo histórico y abre mediciones", async () => {
+    renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
+    fireEvent.click(await screen.findByRole("button", { name: "Ver últimas mediciones" }));
+    expect(screen.getByText("Visualización de últimas mediciones")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Últimas mediciones disponibles" })).toBeInTheDocument();
+  });
+
+  it("Escape cierra el panel contextual abierto", async () => {
+    renderMap(DATA_STATIONS);
+    expect(await screen.findByRole("region", { name: "Información de PM10" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "Información de PM10" })).not.toBeInTheDocument();
+  });
+
   it("muestra últimas mediciones expiradas sin convertirlas en hotspots", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
     fireEvent.click(await screen.findByRole("button", { name: "Ver últimas mediciones" }));

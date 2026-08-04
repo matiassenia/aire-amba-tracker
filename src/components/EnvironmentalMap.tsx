@@ -24,6 +24,7 @@ import {
   type PollutantMeasurement,
   type ThermalCoverageSummary,
 } from "@/lib/thermalCoverage";
+import { historicalHeatPointsForPollutant, type MapViewMode } from "@/lib/historicalThermal";
 import { resolveMapRenderer } from "@/lib/mapRenderer";
 import { findPollutantHotspot, type PollutantHotspot } from "@/lib/maplibreHeat";
 import {
@@ -174,7 +175,8 @@ function StationPanel({
       aria-label="Detalle de estación"
       className={cn(
         "fixed inset-x-3 bottom-20 z-40 max-h-[62vh] overflow-y-auto rounded-[1.65rem] border border-white/10 bg-slate-950/78 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in",
-        "md:absolute md:bottom-auto md:left-auto md:right-5 md:top-20 md:w-[22rem] md:max-h-[calc(100%-7rem)]",
+        "max-h-[calc(100dvh-7rem)] overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]",
+        "md:absolute md:bottom-auto md:left-auto md:right-5 md:top-20 md:w-[24rem] md:max-h-[calc(100dvh-7rem)]",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -365,7 +367,8 @@ function PollutantInfoPanel({
       aria-label={`Información de ${info.shortName}`}
       className={cn(
         "fixed inset-x-3 bottom-20 z-40 max-h-[48vh] overflow-y-auto rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in",
-        "md:absolute md:bottom-auto md:left-5 md:right-auto md:top-20 md:w-[22rem] md:max-h-[calc(100%-7rem)]",
+        "max-h-[calc(100dvh-7rem)] overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]",
+        "md:absolute md:bottom-auto md:left-auto md:right-5 md:top-20 md:w-[24rem] md:max-h-[calc(100dvh-7rem)]",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -502,6 +505,8 @@ function LatestMeasurementsPanel({
   );
 }
 
+type ContextPanel = "summary" | "measurements" | "station" | null;
+
 function ExpiredDataNotice({
   regionName,
   pollutantLabelText,
@@ -562,8 +567,18 @@ function ExpiredDataNotice({
   );
 }
 
-function IntensityLegend({ label, pointCount, coverageState }: { label: string; pointCount: number; coverageState: ThermalCoverageSummary["state"] }) {
-  if (coverageState === "expired-data-only") {
+function IntensityLegend({
+  label,
+  pointCount,
+  coverageState,
+  viewMode,
+}: {
+  label: string;
+  pointCount: number;
+  coverageState: ThermalCoverageSummary["state"];
+  viewMode: MapViewMode;
+}) {
+  if (coverageState === "expired-data-only" && viewMode === "current") {
     return (
       <div className="max-w-[min(92vw,26rem)] rounded-2xl border border-white/10 bg-slate-950/55 px-3 py-2 text-white shadow-2xl backdrop-blur-xl">
         <div className="text-sm font-medium text-white/82">Sin estaciones recientes para interpolar</div>
@@ -577,7 +592,9 @@ function IntensityLegend({ label, pointCount, coverageState }: { label: string; 
   return (
     <div className="max-w-[min(92vw,26rem)] rounded-2xl border border-white/10 bg-slate-950/55 px-3 py-2 text-white shadow-2xl backdrop-blur-xl">
       <div className="flex items-center gap-3">
-        <span className="hidden text-xs font-medium text-white/70 sm:inline">{label}</span>
+        <span className="hidden text-xs font-medium text-white/70 sm:inline">
+          {viewMode === "latest" ? "Últimas mediciones disponibles" : label}
+        </span>
         <div
           className="h-2.5 w-28 rounded-full sm:w-40"
           style={{ background: aqiHeatGradientCss() }}
@@ -597,7 +614,7 @@ function IntensityLegend({ label, pointCount, coverageState }: { label: string; 
         <span>mayor intensidad</span>
       </div>
       <p className="mt-1 max-w-[min(92vw,24rem)] text-[10px] leading-snug text-white/45">
-        Interpolación visual entre estaciones; las áreas intermedias no son mediciones directas.
+        {viewMode === "latest" ? "Puede incluir datos antiguos; no representa la calidad del aire actual." : "Interpolación visual entre estaciones; las áreas intermedias no son mediciones directas."}
       </p>
       <p className="sr-only">
         Escala de calidad del aire para {label}: de menor a mayor intensidad, Bueno, Moderado,
@@ -627,7 +644,8 @@ export function EnvironmentalMap({
   const [mapLibreUnavailable, setMapLibreUnavailable] = React.useState(false);
   const [focusHotspotRequest, setFocusHotspotRequest] = React.useState(0);
   const [forceHotspotNavigation, setForceHotspotNavigation] = React.useState(false);
-  const [showLatestMeasurements, setShowLatestMeasurements] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState<MapViewMode>("current");
+  const [contextPanel, setContextPanel] = React.useState<ContextPanel>("summary");
 
   const fallbackMap = (
     <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />
@@ -638,6 +656,10 @@ export function EnvironmentalMap({
   const available = React.useMemo(() => availablePollutants(stations), [stations]);
   const heatPointCount = React.useMemo(
     () => heatPointsForPollutant(stations, selectedPollutant).length,
+    [stations, selectedPollutant],
+  );
+  const historicalPointCount = React.useMemo(
+    () => historicalHeatPointsForPollutant(stations, selectedPollutant).length,
     [stations, selectedPollutant],
   );
   const heatDiagnostics = React.useMemo(
@@ -664,6 +686,29 @@ export function EnvironmentalMap({
       setSelectedStation(null);
     }
   }, [selectedStation, stations]);
+
+  React.useEffect(() => {
+    if (selectedStation) setContextPanel("station");
+  }, [selectedStation]);
+
+  React.useEffect(() => {
+    setSelectedStation(null);
+    setContextPanel("summary");
+  }, [selectedPollutant, scope]);
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (selectedStation) {
+        setSelectedStation(null);
+        setContextPanel("summary");
+        return;
+      }
+      if (pollutantPanelOpen) setPollutantPanelOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pollutantPanelOpen, selectedStation]);
 
   const coverageMessage = React.useMemo(() => {
     if (isLoading) return "Actualizando estaciones reales...";
@@ -698,6 +743,7 @@ export function EnvironmentalMap({
                 zones={zones}
                 region={selectedRegion}
                 selectedPollutant={selectedPollutant}
+                viewMode={viewMode}
                 selectedStationUid={selectedStation?.uid ?? null}
                 selectedZoneId={selectedZoneId}
                 panelOpen={pollutantPanelOpen || Boolean(selectedStation)}
@@ -714,6 +760,7 @@ export function EnvironmentalMap({
                 zones={zones}
                 region={selectedRegion}
                 selectedPollutant={selectedPollutant}
+                viewMode={viewMode}
                 selectedStationUid={selectedStation?.uid ?? null}
                 selectedZoneId={selectedZoneId}
                 onStationSelect={setSelectedStation}
@@ -726,6 +773,9 @@ export function EnvironmentalMap({
 
       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex flex-col gap-2 md:inset-x-auto md:left-5 md:top-5 md:w-auto">
         <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-950/48 p-1 shadow-2xl backdrop-blur-2xl">
+          <span className="hidden rounded-full px-3 py-2 text-sm font-medium text-white/70 md:inline-flex">
+            {selectedRegion?.name ?? (scope === "argentina" ? "Argentina" : "Región")}
+          </span>
           {POLLUTANTS.map((pollutant) => {
             const hasData = available.includes(pollutant.key);
             const isSelected = selectedPollutant === pollutant.key;
@@ -758,6 +808,32 @@ export function EnvironmentalMap({
           })}
         </div>
 
+        <div className="pointer-events-auto flex w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/58 p-1 shadow-xl backdrop-blur-2xl" role="group" aria-label="Modo de visualización">
+          {([
+            ["current", "Actual"],
+            ["latest", "Últimas mediciones"],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={viewMode === mode}
+              onClick={() => {
+                setViewMode(mode);
+                if (mode === "latest") setContextPanel("measurements");
+              }}
+              className={cn(
+                "min-h-10 rounded-full px-3 text-sm font-medium transition duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-200/70",
+                viewMode === mode ? "bg-white/18 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="sr-only" aria-live="polite">
+            Modo activo: {viewMode === "current" ? "Actual" : "Últimas mediciones"}
+          </span>
+        </div>
+
         {coverageMessage && (
           <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
             {coverageMessage}
@@ -783,9 +859,15 @@ export function EnvironmentalMap({
             pollutant={selectedPollutant}
             summary={thermalCoverage}
             metadata={metadata}
-            showMeasurements={showLatestMeasurements}
-            onToggleMeasurements={() => setShowLatestMeasurements((visible) => !visible)}
-            onSelectStation={setSelectedStation}
+            showMeasurements={contextPanel === "measurements"}
+            onToggleMeasurements={() => {
+              setViewMode("latest");
+              setContextPanel("measurements");
+            }}
+            onSelectStation={(station) => {
+              setViewMode("latest");
+              setSelectedStation(station);
+            }}
           />
         )}
 
@@ -806,11 +888,27 @@ export function EnvironmentalMap({
 
       <div className="pointer-events-none absolute bottom-[5.6rem] left-3 right-3 z-20 flex justify-center md:bottom-5 md:left-auto md:right-5 md:justify-end">
         <div className="pointer-events-auto">
-          <IntensityLegend label={selectedPollutantLabel} pointCount={heatPointCount} coverageState={thermalCoverage.state} />
+          <IntensityLegend
+            label={selectedPollutantLabel}
+            pointCount={viewMode === "latest" ? historicalPointCount : heatPointCount}
+            coverageState={thermalCoverage.state}
+            viewMode={viewMode}
+          />
         </div>
       </div>
 
-      {pollutantPanelOpen && (
+      {viewMode === "latest" && historicalPointCount > 0 && (
+        <div className="pointer-events-none absolute inset-x-3 top-[8.75rem] z-20 flex justify-center md:inset-x-auto md:left-5 md:top-[8.5rem] md:justify-start">
+          <div className="pointer-events-auto max-w-[min(92vw,32rem)] rounded-2xl border border-violet-200/15 bg-slate-950/62 px-3 py-2 text-sm text-white/78 shadow-xl backdrop-blur-2xl">
+            <div className="font-medium text-violet-100">Visualización de últimas mediciones</div>
+            <div className="text-xs text-white/58">
+              {historicalPointCount} estaciones · del {formatMeasurementDate(thermalCoverage.oldestMeasurementAt)} al {formatMeasurementDate(thermalCoverage.latestMeasurementAt)} · No representa la calidad del aire actual
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pollutantPanelOpen && contextPanel !== "station" && (
         <PollutantInfoPanel
           pollutant={selectedPollutant}
           hotspot={hotspot}
@@ -820,7 +918,10 @@ export function EnvironmentalMap({
             setFocusHotspotRequest((request) => request + 1);
           }}
           onViewLatestStation={() => {
-            if (thermalCoverage.latestMeasurement) setSelectedStation(thermalCoverage.latestMeasurement.station);
+            if (thermalCoverage.latestMeasurement) {
+              setViewMode("latest");
+              setSelectedStation(thermalCoverage.latestMeasurement.station);
+            }
           }}
           onClose={() => setPollutantPanelOpen(false)}
         />

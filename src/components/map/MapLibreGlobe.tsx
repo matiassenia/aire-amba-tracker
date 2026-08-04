@@ -15,6 +15,7 @@ import {
 } from "@/lib/maplibreHeat";
 import { isStationInsideArgentina } from "@/lib/argentinaBoundary";
 import { MAPLIBRE_SOURCE_IDS, syncMapLibreSources } from "@/lib/maplibreSourceSync";
+import { historicalGroupFeatureCollection, stationsToHistoricalHeatGeoJSON, type MapViewMode } from "@/lib/historicalThermal";
 import {
   AMBA_GLOBE_CAMERA,
   AMBA_HOTSPOT_CAMERA_ZOOM,
@@ -39,6 +40,7 @@ type MapLibreGlobeProps = {
   zones: Zone[];
   region: Region | null;
   selectedPollutant: PollutantKey;
+  viewMode?: MapViewMode;
   selectedStationUid?: number | null;
   selectedZoneId?: string | null;
   panelOpen?: boolean;
@@ -61,6 +63,8 @@ const HEAT_SOURCE_ID = MAPLIBRE_SOURCE_IDS.heat;
 const STATION_SOURCE_ID = MAPLIBRE_SOURCE_IDS.stations;
 const GROUP_SOURCE_ID = MAPLIBRE_SOURCE_IDS.groups;
 const HOTSPOT_SOURCE_ID = MAPLIBRE_SOURCE_IDS.hotspot;
+const HISTORICAL_HEAT_SOURCE_ID = MAPLIBRE_SOURCE_IDS.historicalHeat;
+const HISTORICAL_GROUP_SOURCE_ID = MAPLIBRE_SOURCE_IDS.historicalGroups;
 
 function cameraForRegion(region: Region | null): GlobeCamera {
   if (!region || region.id === "argentina") return ARGENTINA_GLOBE_CAMERA;
@@ -139,10 +143,19 @@ function hotspotFeatureCollection(hotspot: PollutantHotspot | null, pulseOpacity
   };
 }
 
+function setLayerVisibility(map: MapLibreMap, layerIds: readonly string[], visible: boolean) {
+  for (const layerId of layerIds) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+    }
+  }
+}
+
 export function MapLibreGlobe({
   stations,
   region,
   selectedPollutant,
+  viewMode = "current",
   panelOpen = false,
   hotspot: hotspotProp,
   focusHotspotRequest = 0,
@@ -155,17 +168,22 @@ export function MapLibreGlobe({
     [hotspotProp, selectedPollutant, stations],
   );
   const heatGeoJson = useMemo(() => stationsToHeatGeoJSON(stations, selectedPollutant), [stations, selectedPollutant]);
+  const historicalHeatGeoJson = useMemo(() => stationsToHistoricalHeatGeoJSON(stations, selectedPollutant), [stations, selectedPollutant]);
   const stationGeoJson = useMemo(() => stationFeatureCollection(stations, selectedPollutant), [stations, selectedPollutant]);
   const groupGeoJson = useMemo(() => groupFeatureCollection(stations, selectedPollutant), [stations, selectedPollutant]);
+  const historicalGroupGeoJson = useMemo(() => historicalGroupFeatureCollection(stations, selectedPollutant), [stations, selectedPollutant]);
   const hotspotGeoJson = useMemo(() => hotspotFeatureCollection(hotspot), [hotspot]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const stationsRef = useRef(stations);
   const heatGeoJsonRef = useRef(heatGeoJson);
+  const historicalHeatGeoJsonRef = useRef(historicalHeatGeoJson);
   const stationGeoJsonRef = useRef(stationGeoJson);
   const groupGeoJsonRef = useRef(groupGeoJson);
+  const historicalGroupGeoJsonRef = useRef(historicalGroupGeoJson);
   const hotspotGeoJsonRef = useRef(hotspotGeoJson);
   const regionRef = useRef(region);
+  const viewModeRef = useRef(viewMode);
   const onStationSelectRef = useRef(onStationSelect);
   const onUnavailableRef = useRef(onUnavailable);
   const userInteractedRef = useRef(false);
@@ -217,13 +235,16 @@ export function MapLibreGlobe({
   useEffect(() => {
     stationsRef.current = stations;
     heatGeoJsonRef.current = heatGeoJson;
+    historicalHeatGeoJsonRef.current = historicalHeatGeoJson;
     stationGeoJsonRef.current = stationGeoJson;
     groupGeoJsonRef.current = groupGeoJson;
+    historicalGroupGeoJsonRef.current = historicalGroupGeoJson;
     hotspotGeoJsonRef.current = hotspotGeoJson;
     regionRef.current = region;
+    viewModeRef.current = viewMode;
     onStationSelectRef.current = onStationSelect;
     onUnavailableRef.current = onUnavailable;
-  }, [groupGeoJson, heatGeoJson, hotspotGeoJson, onStationSelect, onUnavailable, region, stationGeoJson, stations]);
+  }, [groupGeoJson, heatGeoJson, historicalGroupGeoJson, historicalHeatGeoJson, hotspotGeoJson, onStationSelect, onUnavailable, region, stationGeoJson, stations, viewMode]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -323,6 +344,20 @@ export function MapLibreGlobe({
               "heatmap-color": mapLibreHeatExpressions.color,
             } as Record<string, unknown>,
           });
+          map?.addSource(HISTORICAL_HEAT_SOURCE_ID, { type: "geojson", data: historicalHeatGeoJsonRef.current });
+          map?.addLayer({
+            id: "air-quality-historical-heatmap",
+            type: "heatmap",
+            source: HISTORICAL_HEAT_SOURCE_ID,
+            layout: { visibility: "none" },
+            paint: {
+              "heatmap-weight": ["get", "finalWeight"],
+              "heatmap-radius": mapLibreHeatExpressions.radius,
+              "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 2, 0.46, 4, 0.68, 8, 0.54, 11, 0.36],
+              "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 2, 0.24, 4, 0.34, 8, 0.28, 11, 0.18],
+              "heatmap-color": mapLibreHeatExpressions.color,
+            } as Record<string, unknown>,
+          });
           map?.addSource(GROUP_SOURCE_ID, { type: "geojson", data: groupGeoJsonRef.current });
           map?.addLayer({
             id: "air-quality-overview-outer",
@@ -334,6 +369,22 @@ export function MapLibreGlobe({
               "circle-color": ["get", "color"],
               "circle-opacity": overviewLayerExpressions.outerOpacity,
               "circle-blur": 0.82,
+            } as Record<string, unknown>,
+          });
+          map?.addSource(HISTORICAL_GROUP_SOURCE_ID, { type: "geojson", data: historicalGroupGeoJsonRef.current });
+          map?.addLayer({
+            id: "air-quality-historical-overview",
+            type: "circle",
+            source: HISTORICAL_GROUP_SOURCE_ID,
+            layout: { visibility: "none" },
+            maxzoom: MAPLIBRE_OVERVIEW_MAX_ZOOM,
+            paint: {
+              "circle-radius": overviewLayerExpressions.middleRadius,
+              "circle-color": ["get", "color"],
+              "circle-opacity": ["interpolate", ["linear"], ["zoom"], 2, 0.34, 3.35, 0.48, 6.5, 0.38, 8, 0],
+              "circle-blur": 0.58,
+              "circle-stroke-color": "rgba(255,255,255,0.52)",
+              "circle-stroke-width": 0.8,
             } as Record<string, unknown>,
           });
           map?.addLayer({
@@ -425,10 +476,14 @@ export function MapLibreGlobe({
           if (map) {
             syncMapLibreSources(map, {
               heat: heatGeoJsonRef.current,
+              historicalHeat: historicalHeatGeoJsonRef.current,
               stations: stationGeoJsonRef.current,
               groups: groupGeoJsonRef.current,
+              historicalGroups: historicalGroupGeoJsonRef.current,
               hotspot: hotspotGeoJsonRef.current,
             });
+            setLayerVisibility(map, ["air-quality-heatmap", "air-quality-overview-outer", "air-quality-overview-middle", "air-quality-groups", "selected-hotspot-outer", "selected-hotspot-middle", "selected-hotspot-core"], viewModeRef.current === "current");
+            setLayerVisibility(map, ["air-quality-historical-heatmap", "air-quality-historical-overview"], viewModeRef.current === "latest");
           }
           map?.on("click", "air-quality-stations", (event) => {
             const uid = event.features?.[0]?.properties?.uid;
@@ -462,8 +517,15 @@ export function MapLibreGlobe({
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
-    syncMapLibreSources(map, { heat: heatGeoJson, stations: stationGeoJson, groups: groupGeoJson, hotspot: hotspotGeoJson });
-  }, [heatGeoJson, stationGeoJson, groupGeoJson, hotspotGeoJson]);
+    syncMapLibreSources(map, { heat: heatGeoJson, historicalHeat: historicalHeatGeoJson, stations: stationGeoJson, groups: groupGeoJson, historicalGroups: historicalGroupGeoJson, hotspot: hotspotGeoJson });
+  }, [heatGeoJson, historicalHeatGeoJson, stationGeoJson, groupGeoJson, historicalGroupGeoJson, hotspotGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.isStyleLoaded()) return;
+    setLayerVisibility(map, ["air-quality-heatmap", "air-quality-overview-outer", "air-quality-overview-middle", "air-quality-groups", "selected-hotspot-outer", "selected-hotspot-middle", "selected-hotspot-core"], viewMode === "current");
+    setLayerVisibility(map, ["air-quality-historical-heatmap", "air-quality-historical-overview"], viewMode === "latest");
+  }, [viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;
