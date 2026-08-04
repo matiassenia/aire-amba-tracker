@@ -661,6 +661,8 @@ function MobileAirQualitySheet({
   viewMode,
   onViewModeChange,
   selectedStation,
+  summaryText,
+  detailHint,
   children,
 }: {
   state: BottomSheetState;
@@ -670,6 +672,8 @@ function MobileAirQualitySheet({
   viewMode: MapViewMode;
   onViewModeChange: (mode: MapViewMode) => void;
   selectedStation: Station | null;
+  summaryText?: string | null;
+  detailHint?: string | null;
   children: React.ReactNode;
 }) {
   const dragStart = React.useRef<number | null>(null);
@@ -682,15 +686,15 @@ function MobileAirQualitySheet({
       className={cn(
         "pointer-events-auto absolute inset-x-0 bottom-0 z-40 mx-auto w-full max-w-3xl rounded-t-[1.65rem] border border-white/10 bg-slate-950/88 text-white shadow-[0_-24px_80px_rgba(0,0,0,0.46)] backdrop-blur-2xl transition-[height,transform] duration-200 ease-out",
         "px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.85rem,env(safe-area-inset-bottom))]",
-        state === "collapsed" && "h-[calc(6.2rem+env(safe-area-inset-bottom))]",
-        state === "half" && "h-[42dvh] min-h-[18rem]",
-        state === "expanded" && "h-[82dvh]",
+        state === "collapsed" && "h-[calc(5.65rem+env(safe-area-inset-bottom))]",
+        state === "half" && "h-[34dvh] min-h-[14.5rem]",
+        state === "expanded" && "h-[78dvh]",
         "md:left-auto md:right-[max(1rem,env(safe-area-inset-right))] md:top-[max(5rem,calc(4.5rem+env(safe-area-inset-top)))] md:h-auto md:max-h-[calc(100dvh-7rem)] md:w-[25rem] md:rounded-[1.65rem] md:pb-4",
       )}
     >
       <button
         type="button"
-        className="flex h-11 w-full items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-200/70 md:hidden"
+        className="flex h-12 w-full flex-col items-center justify-center gap-1 focus:outline-none focus:ring-2 focus:ring-cyan-200/70 md:hidden"
         aria-label={state === "collapsed" ? "Abrir detalle de calidad del aire" : "Contraer detalle de calidad del aire"}
         onClick={() => onStateChange(state === "collapsed" ? "half" : "collapsed")}
         onPointerDown={(event) => {
@@ -704,7 +708,10 @@ function MobileAirQualitySheet({
           if (delta > 24) onStateChange(nextCollapsed);
         }}
       >
-        <span className="h-1.5 w-12 rounded-full bg-white/28" />
+        <span className="h-1.5 w-14 rounded-full bg-white/55 shadow-[0_0_16px_rgba(255,255,255,0.28)]" />
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-white/42">
+          {state === "collapsed" ? "Deslizar" : state === "half" ? "Expandir" : "Contraer"}
+        </span>
       </button>
 
       <div className="flex items-start justify-between gap-3 md:pt-4">
@@ -744,20 +751,36 @@ function MobileAirQualitySheet({
         </div>
       )}
 
-      {state !== "collapsed" && (
-        <div className={cn("mt-3 min-h-0 pr-1", state === "half" ? "max-h-[calc(42dvh-10rem)] overflow-hidden" : "max-h-[calc(82dvh-10rem)] overflow-y-auto overscroll-contain md:max-h-[calc(100dvh-15rem)]")}>
-          {children}
+      {state === "half" && (
+        <div className="mt-3 space-y-2 border-t border-white/10 pt-3 text-sm text-white/72">
+          {selectedStation && (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-white/50">Estación</span>
+              <span className="truncate font-medium text-white/82">{selectedStation.name}</span>
+            </div>
+          )}
+          {summaryText && (
+            <p className="line-clamp-2 leading-relaxed text-white/70">{summaryText}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => onStateChange("expanded")}
+            className="mt-2 min-h-11 w-full rounded-full border border-white/10 bg-white/10 text-sm font-medium text-white/82 transition hover:bg-white/16 focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
+          >
+            Ver detalles
+          </button>
+          {detailHint && <p className="text-center text-[11px] text-white/42">{detailHint}</p>}
         </div>
       )}
 
-      {state === "half" && (
-        <button
-          type="button"
-          onClick={() => onStateChange("expanded")}
-          className="mt-3 hidden min-h-11 w-full rounded-full border border-white/10 bg-white/8 text-sm font-medium text-white/72 transition hover:bg-white/14 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70 md:block"
-        >
-          Ver más
-        </button>
+      {state === "expanded" && (
+        <div className="relative mt-3 min-h-0">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-4 bg-gradient-to-b from-slate-950/88 to-transparent" />
+          <div className="max-h-[calc(78dvh-10.5rem)] overflow-y-auto overscroll-contain pr-1 pt-2 [scrollbar-width:thin] md:max-h-[calc(100dvh-15rem)]">
+          {children}
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-5 bg-gradient-to-t from-slate-950/88 to-transparent" />
+        </div>
       )}
     </section>
   );
@@ -887,6 +910,15 @@ export function EnvironmentalMap({
     if (mode === "latest") setContextPanel("measurements");
   }, []);
 
+  const sheetSummaryText = React.useMemo(() => {
+    if (errorMessage) return errorMessage;
+    if (selectedStation) return `${selectedStation.name} · ${airQualityStatus}`;
+    if (thermalCoverage.state === "expired-data-only") return `Sin mediciones recientes para ${selectedPollutantLabel}. Usá Histórico para ver últimas mediciones.`;
+    if (coverageMessage) return coverageMessage;
+    if (viewMode === "latest") return "Puede incluir datos antiguos; no representa la calidad del aire actual.";
+    return hotspot ? `Mayor nivel informado: AQI ${Math.round(hotspot.maxAqi)} · ${hotspot.category}` : "Explorá estaciones y zonas en el mapa.";
+  }, [airQualityStatus, coverageMessage, errorMessage, hotspot, selectedPollutantLabel, selectedStation, thermalCoverage.state, viewMode]);
+
   const sheetContent = selectedStation ? (
     <StationPanel
       embedded
@@ -983,10 +1015,10 @@ export function EnvironmentalMap({
       </div>
 
       <div className="pointer-events-none absolute left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-20 flex flex-col gap-2 md:right-auto md:w-[min(42rem,calc(100vw-2rem))]">
-        <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-[1.35rem] border border-white/10 bg-slate-950/52 px-3 py-2 shadow-2xl backdrop-blur-2xl">
+        <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/52 px-3 py-1.5 shadow-2xl backdrop-blur-2xl">
           <div className="min-w-0">
             <div className="truncate text-[15px] font-semibold leading-tight text-white">{appTitle}</div>
-            <div className="truncate text-xs text-white/58">
+            <div className="hidden truncate text-xs text-white/58 sm:block">
               {selectedRegion?.name ?? (scope === "argentina" ? "Argentina" : "Región")}{dataSource ? ` · ${dataSource}` : ""}{summaryLabel ? ` · ${summaryLabel}` : ""}
             </div>
           </div>
@@ -1004,7 +1036,7 @@ export function EnvironmentalMap({
         {regions.length > 1 && (
           <nav
             aria-label="Seleccionar región"
-            className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-950/45 p-1 shadow-xl backdrop-blur-2xl"
+            className="pointer-events-auto hidden max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-950/45 p-1 shadow-xl backdrop-blur-2xl md:flex"
           >
             {regions.map((region) => (
               <button
@@ -1079,12 +1111,10 @@ export function EnvironmentalMap({
       </div>
 
       {viewMode === "latest" && historicalPointCount > 0 && (
-        <div className="pointer-events-none absolute inset-x-3 top-[12.5rem] z-20 flex justify-center md:inset-x-auto md:left-[max(1rem,env(safe-area-inset-left))] md:top-[13rem] md:justify-start">
-          <div className="pointer-events-auto max-w-[min(92vw,32rem)] rounded-2xl border border-violet-200/15 bg-slate-950/62 px-3 py-2 text-sm text-white/78 shadow-xl backdrop-blur-2xl">
-            <div className="font-medium text-violet-100">Visualización de últimas mediciones</div>
-            <div className="text-xs text-white/58">
-              {historicalPointCount} estaciones · del {formatMeasurementDate(thermalCoverage.oldestMeasurementAt)} al {formatMeasurementDate(thermalCoverage.latestMeasurementAt)} · No representa la calidad del aire actual
-            </div>
+        <div className="pointer-events-none absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[calc(8.5rem+env(safe-area-inset-top))] z-20 flex justify-end md:left-[max(1rem,env(safe-area-inset-left))] md:right-auto md:top-[13rem] md:justify-start">
+          <div className="pointer-events-auto max-w-[min(76vw,22rem)] rounded-full border border-violet-200/15 bg-slate-950/62 px-3 py-1.5 text-xs text-white/78 shadow-xl backdrop-blur-2xl">
+            <span className="font-medium text-violet-100">Histórico</span> · {historicalPointCount} est. · no actual
+            <span className="sr-only">Visualización de últimas mediciones. No representa la calidad del aire actual.</span>
           </div>
         </div>
       )}
@@ -1097,6 +1127,8 @@ export function EnvironmentalMap({
         viewMode={viewMode}
         onViewModeChange={changeViewMode}
         selectedStation={selectedStation}
+        summaryText={sheetSummaryText}
+        detailHint="Deslizá hacia arriba para expandir"
       >
         {errorMessage ? (
           <div className="rounded-2xl border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-50">

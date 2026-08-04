@@ -77,6 +77,10 @@ async function openAirQualitySheet() {
   fireEvent.click(await screen.findByRole("button", { name: "Abrir detalle de calidad del aire" }));
 }
 
+async function expandAirQualitySheet() {
+  fireEvent.click(await screen.findByRole("button", { name: "Ver detalles" }));
+}
+
 describe("selector de contaminantes", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
@@ -145,6 +149,7 @@ describe("selector de contaminantes", () => {
     vi.stubEnv("VITE_MAP_RENDERER", "maplibre");
     renderMap(DATA_STATIONS);
     fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
+    await expandAirQualitySheet();
     fireEvent.click(screen.getByRole("button", { name: "Ver foco en el mapa" }));
     expect(screen.getByTestId("maplibre-mock")).toHaveTextContent("focus 2");
     expect(screen.getByTestId("maplibre-mock")).toHaveTextContent("force true");
@@ -172,6 +177,7 @@ describe("selector de contaminantes", () => {
     renderMap(DATA_STATIONS);
     const pm25 = await screen.findByRole("button", { name: "PM2.5" });
     fireEvent.click(pm25);
+    await expandAirQualitySheet();
     expect(screen.getByRole("region", { name: "Información de PM2.5" })).toBeInTheDocument();
     expect(screen.getByText("Material particulado fino")).toBeInTheDocument();
     expect(screen.getByText("Polvo invisible extremadamente pequeño.")).toBeInTheDocument();
@@ -185,6 +191,7 @@ describe("selector de contaminantes", () => {
     fireEvent.click(pm25);
     const no2 = screen.getByRole("button", { name: "NO₂" });
     fireEvent.click(no2);
+    await expandAirQualitySheet();
     expect(no2).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("region", { name: "Información de NO₂" })).toBeInTheDocument();
     expect(screen.getByText("Dioxido de nitrogeno")).toBeInTheDocument();
@@ -195,6 +202,7 @@ describe("selector de contaminantes", () => {
     renderMap();
     const pm25 = await screen.findByRole("button", { name: "PM2.5" });
     fireEvent.click(pm25);
+    await expandAirQualitySheet();
     fireEvent.click(screen.getByRole("button", { name: "Cerrar información del contaminante" }));
     expect(screen.queryByRole("region", { name: "Información de PM2.5" })).not.toBeInTheDocument();
     expect(pm25).toHaveAttribute("aria-pressed", "true");
@@ -203,6 +211,7 @@ describe("selector de contaminantes", () => {
   it("el panel específico no contiene guía general", async () => {
     renderMap();
     fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
+    await expandAirQualitySheet();
     const panel = screen.getByRole("region", { name: "Información de PM2.5" });
     expect(panel).not.toHaveTextContent(/WAQI/i);
     expect(panel).not.toHaveTextContent(/metodología/i);
@@ -212,6 +221,7 @@ describe("selector de contaminantes", () => {
   it("muestra estado informativo cuando hay PM10 pero todas las mediciones están vencidas", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
     await openAirQualitySheet();
+    await expandAirQualitySheet();
     expect(await screen.findByText("Sin mediciones recientes para PM10 en AMBA")).toBeInTheDocument();
     expect(screen.getByText(/últimas 72 horas/i)).toBeInTheDocument();
     expect(screen.getByText(/Esto no indica una falla del mapa/i)).toBeInTheDocument();
@@ -219,7 +229,7 @@ describe("selector de contaminantes", () => {
     expect(screen.getByText(/Datos consultados por la aplicación:/i)).toBeInTheDocument();
     expect(screen.queryByText(/web rota/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ver foco en el mapa" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ver últimas mediciones" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Últimas mediciones disponibles" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Leyenda" }));
     expect(screen.getByText("Sin estaciones recientes para interpolar")).toBeInTheDocument();
   });
@@ -228,8 +238,9 @@ describe("selector de contaminantes", () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
     await openAirQualitySheet();
     fireEvent.click(await screen.findByRole("button", { name: "Histórico" }));
+    await expandAirQualitySheet();
     fireEvent.click(screen.getByRole("button", { name: "Leyenda" }));
-    expect(screen.getByText("Visualización de últimas mediciones")).toBeInTheDocument();
+    expect(screen.getAllByText(/Histórico/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Últimas mediciones disponibles").length).toBeGreaterThan(0);
     expect(screen.getByText(/No representa la calidad del aire actual/)).toBeInTheDocument();
   });
@@ -237,14 +248,15 @@ describe("selector de contaminantes", () => {
   it("Ver últimas mediciones activa el modo histórico y abre mediciones", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
     await openAirQualitySheet();
-    fireEvent.click(await screen.findByRole("button", { name: "Ver últimas mediciones" }));
-    expect(screen.getByText("Visualización de últimas mediciones")).toBeInTheDocument();
+    await expandAirQualitySheet();
+    expect(screen.getByText(/Histórico/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Últimas mediciones disponibles" })).toBeInTheDocument();
   });
 
   it("Escape cierra el panel contextual abierto", async () => {
     renderMap(DATA_STATIONS);
     await openAirQualitySheet();
+    await expandAirQualitySheet();
     expect(await screen.findByRole("region", { name: "Información de PM10" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("region", { name: "Información de PM10" })).not.toBeInTheDocument();
@@ -253,7 +265,7 @@ describe("selector de contaminantes", () => {
   it("muestra últimas mediciones expiradas sin convertirlas en hotspots", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
     await openAirQualitySheet();
-    fireEvent.click(await screen.findByRole("button", { name: "Ver últimas mediciones" }));
+    await expandAirQualitySheet();
     expect(screen.getByRole("region", { name: "Últimas mediciones disponibles" })).toBeInTheDocument();
     expect(screen.getAllByText("La Boca").length).toBeGreaterThan(0);
     expect(screen.getByText(/PM10: 14 · Bueno/)).toBeInTheDocument();
@@ -264,6 +276,7 @@ describe("selector de contaminantes", () => {
   it("diferencia contaminante sin datos de mediciones vencidas", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION });
     fireEvent.click(await screen.findByRole("button", { name: "O₃" }));
+    await expandAirQualitySheet();
     expect(screen.getByText("No hay mediciones de O₃ disponibles en las estaciones de esta región.")).toBeInTheDocument();
     expect(screen.queryByText(/Sin mediciones recientes para O₃/)).not.toBeInTheDocument();
   });
@@ -271,6 +284,7 @@ describe("selector de contaminantes", () => {
   it("mantiene backend offline como mensaje distinto", async () => {
     renderMap([], { errorMessage: "No se pudo conectar al servicio de datos." });
     await openAirQualitySheet();
+    await expandAirQualitySheet();
     expect(await screen.findByText("No se pudo conectar al servicio de datos.")).toBeInTheDocument();
     expect(screen.queryByText(/Sin mediciones recientes/)).not.toBeInTheDocument();
   });

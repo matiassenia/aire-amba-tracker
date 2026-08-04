@@ -64,6 +64,7 @@ describe("guía educativa desde el mapa", () => {
     render(<Index />);
 
     fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ver detalles" }));
 
     expect(screen.queryByRole("dialog", { name: "Guía para leer el mapa" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Información de PM2.5" })).toBeInTheDocument();
@@ -80,6 +81,7 @@ describe("guía educativa desde el mapa", () => {
     render(<Index />);
 
     fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ver detalles" }));
     expect(screen.getByRole("region", { name: "Información de PM2.5" })).not.toHaveTextContent(/WAQI/i);
 
     fireEvent.click(screen.getByRole("button", { name: "Abrir guía para leer el mapa" }));
