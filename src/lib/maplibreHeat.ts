@@ -1,5 +1,6 @@
 import type { Station } from "@/types/airQuality";
 import { aqiCategory, aqiColor, aqiToVisualHeatWeight } from "@/lib/aqiHeatScale";
+import { isStationInsideArgentina } from "@/lib/argentinaBoundary";
 import { distanceKm } from "@/lib/coverage";
 import {
   freshnessMultiplierForStation,
@@ -67,26 +68,7 @@ export type PollutantHotspot = {
   stationIds: number[];
 };
 
-const ARGENTINA_BOUNDS = {
-  minLat: -56,
-  maxLat: -21,
-  minLon: -74,
-  maxLon: -53,
-};
-
 const MIN_SIGNIFICANT_HOTSPOT_AQI = 1;
-
-export function isStationInsideArgentina(station: Station): boolean {
-  const insideBroadBounds =
-    station.lat >= ARGENTINA_BOUNDS.minLat &&
-    station.lat <= ARGENTINA_BOUNDS.maxLat &&
-    station.lon >= ARGENTINA_BOUNDS.minLon &&
-    station.lon <= ARGENTINA_BOUNDS.maxLon;
-  if (!insideBroadBounds) return false;
-  // Evita incluir Uruguay/sur de Brasil en el recorte rectangular amplio.
-  if (station.lat < -30 && station.lon > -57) return false;
-  return true;
-}
 
 export function stationsToHeatGeoJSON(
   stations: Station[],
@@ -153,13 +135,58 @@ export const mapLibreHeatExpressions = {
   ],
 };
 
+type ZoomOpacityStop = readonly [number, number];
+
+const intensityFactorExpression = (floor: number) => [
+  "interpolate",
+  ["linear"],
+  ["coalesce", ["get", "intensity"], 0],
+  0,
+  floor,
+  1,
+  1,
+] as const;
+
+export function propertyOpacityExpression({
+  zoomStops,
+  freshnessFloor,
+  intensityFloor,
+}: {
+  zoomStops: readonly ZoomOpacityStop[];
+  freshnessFloor: number;
+  intensityFloor: number;
+}) {
+  const freshnessExpression = ["max", freshnessFloor, ["coalesce", ["get", "freshnessFactor"], 0]];
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    ...zoomStops.flatMap(([zoom, baseOpacity]) => [
+      zoom,
+      baseOpacity === 0 ? 0 : ["*", baseOpacity, freshnessExpression, intensityFactorExpression(intensityFloor)],
+    ]),
+  ];
+}
+
 export const overviewLayerExpressions = {
   outerRadius: ["interpolate", ["linear"], ["zoom"], 2, 52, 3.35, 66, 4, 72, 6, 82, 8, 28],
-  outerOpacity: ["*", ["interpolate", ["linear"], ["zoom"], 2, 0.32, 3.35, 0.4, 4, 0.42, 6.5, 0.28, 8, 0], ["max", 0.35, ["get", "freshnessFactor"]], ["interpolate", ["linear"], ["get", "intensity"], 0, 0.65, 1, 1]],
+  outerOpacity: propertyOpacityExpression({
+    zoomStops: [[2, 0.32], [3.35, 0.4], [4, 0.42], [6.5, 0.28], [8, 0]],
+    freshnessFloor: 0.35,
+    intensityFloor: 0.65,
+  }),
   middleRadius: ["interpolate", ["linear"], ["zoom"], 2, 30, 3.35, 42, 4, 48, 6, 56, 8, 18],
-  middleOpacity: ["*", ["interpolate", ["linear"], ["zoom"], 2, 0.5, 3.35, 0.64, 4, 0.68, 6.5, 0.46, 8, 0], ["max", 0.35, ["get", "freshnessFactor"]], ["interpolate", ["linear"], ["get", "intensity"], 0, 0.65, 1, 1]],
-  coreRadius: ["interpolate", ["linear"], ["get", "stationCount"], 1, 5, 8, 9, 20, 12],
-  coreOpacity: ["*", ["interpolate", ["linear"], ["zoom"], 2, 0.92, 6.5, 1, 8, 0], ["max", 0.45, ["get", "freshnessFactor"]], ["interpolate", ["linear"], ["get", "intensity"], 0, 0.72, 1, 1]],
+  middleOpacity: propertyOpacityExpression({
+    zoomStops: [[2, 0.5], [3.35, 0.64], [4, 0.68], [6.5, 0.46], [8, 0]],
+    freshnessFloor: 0.35,
+    intensityFloor: 0.65,
+  }),
+  coreRadius: ["interpolate", ["linear"], ["coalesce", ["get", "stationCount"], 1], 1, 5, 8, 9, 20, 12],
+  coreOpacity: propertyOpacityExpression({
+    zoomStops: [[2, 0.92], [3.35, 0.94], [6.5, 1], [8, 0]],
+    freshnessFloor: 0.45,
+    intensityFloor: 0.72,
+  }),
 };
 
 export function visualGroupsForStations(

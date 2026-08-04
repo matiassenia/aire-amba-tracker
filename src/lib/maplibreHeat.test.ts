@@ -5,6 +5,7 @@ import {
   findPollutantHotspot,
   mapLibreHeatExpressions,
   overviewLayerExpressions,
+  propertyOpacityExpression,
   stationsToHeatGeoJSON,
   hotspotScoreForGroup,
   visualGroupsForStations,
@@ -19,6 +20,13 @@ const stations: Station[] = [
   { uid: 4, name: "Montevideo", lat: -34.9, lon: -56.16, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { pm25: 200 } },
   { uid: 5, name: "Expired", lat: -31.4, lon: -64.18, aqi: null, measured_at: "2026-07-28T10:00:00Z", iaqi: { pm25: 150 } },
 ];
+
+function containsNestedZoomUnderMultiply(expression: unknown): boolean {
+  if (!Array.isArray(expression)) return false;
+  const [operator, ...children] = expression;
+  if (operator === "*" && JSON.stringify(children).includes('"zoom"')) return true;
+  return children.some(containsNestedZoomUnderMultiply);
+}
 
 describe("stationsToHeatGeoJSON", () => {
   it("converts valid Argentine stations to GeoJSON", () => {
@@ -68,11 +76,58 @@ describe("visualGroupsForStations", () => {
     expect(groups.map((group) => group.stationCount)).toEqual([2, 1]);
   });
 
+  it("emits group coordinates as GeoJSON longitude, latitude inside Argentina bounds", () => {
+    const groups = visualGroupsForStations(stations, "pm25", 80, now);
+    for (const group of groups) {
+      const coordinates = [group.lon, group.lat];
+      expect(coordinates).toEqual([expect.any(Number), expect.any(Number)]);
+      expect(Number.isFinite(coordinates[0])).toBe(true);
+      expect(Number.isFinite(coordinates[1])).toBe(true);
+      expect(coordinates[0]).toBeGreaterThanOrEqual(-73.8);
+      expect(coordinates[0]).toBeLessThanOrEqual(-53.5);
+      expect(coordinates[1]).toBeGreaterThanOrEqual(-55.2);
+      expect(coordinates[1]).toBeLessThanOrEqual(-21.6);
+    }
+  });
+
   it("keeps overview visible on continental zoom and hides it when close", () => {
     expect(overviewLayerExpressions.outerRadius).toContain(3.35);
     expect(overviewLayerExpressions.outerRadius).toContain(66);
-    expect(overviewLayerExpressions.outerOpacity).toContainEqual(["max", 0.35, ["get", "freshnessFactor"]]);
+    expect(JSON.stringify(overviewLayerExpressions.outerOpacity)).toContain("freshnessFactor");
     expect(JSON.stringify(overviewLayerExpressions.outerOpacity)).toContain("intensity");
+  });
+
+  it("uses top-level interpolate for overview opacity expressions", () => {
+    expect(overviewLayerExpressions.outerOpacity[0]).toBe("interpolate");
+    expect(overviewLayerExpressions.middleOpacity[0]).toBe("interpolate");
+    expect(overviewLayerExpressions.coreOpacity[0]).toBe("interpolate");
+    expect(containsNestedZoomUnderMultiply(overviewLayerExpressions.outerOpacity)).toBe(false);
+    expect(containsNestedZoomUnderMultiply(overviewLayerExpressions.middleOpacity)).toBe(false);
+    expect(containsNestedZoomUnderMultiply(overviewLayerExpressions.coreOpacity)).toBe(false);
+  });
+
+  it("keeps zoom 3.35 and zoom 8 opacity stops", () => {
+    expect(JSON.stringify(overviewLayerExpressions.outerOpacity)).toContain("0.4");
+    expect(JSON.stringify(overviewLayerExpressions.middleOpacity)).toContain("0.64");
+    expect(JSON.stringify(overviewLayerExpressions.coreOpacity)).toContain("0.94");
+    expect(overviewLayerExpressions.outerOpacity.at(-1)).toBe(0);
+    expect(overviewLayerExpressions.middleOpacity.at(-1)).toBe(0);
+    expect(overviewLayerExpressions.coreOpacity.at(-1)).toBe(0);
+  });
+
+  it("builds property opacity expressions with freshness, intensity and coalesce", () => {
+    const expression = propertyOpacityExpression({ zoomStops: [[2, 0.3], [8, 0]], freshnessFloor: 0.35, intensityFloor: 0.65 });
+    expect(expression[0]).toBe("interpolate");
+    expect(JSON.stringify(expression)).toContain("freshnessFactor");
+    expect(JSON.stringify(expression)).toContain("intensity");
+    expect(JSON.stringify(expression)).toContain("coalesce");
+    expect(containsNestedZoomUnderMultiply(expression)).toBe(false);
+  });
+
+  it("uses numeric fallbacks in overview expressions", () => {
+    expect(JSON.stringify(overviewLayerExpressions.outerOpacity)).toContain("coalesce");
+    expect(JSON.stringify(overviewLayerExpressions.middleOpacity)).toContain("coalesce");
+    expect(JSON.stringify(overviewLayerExpressions.coreRadius)).toContain("stationCount");
   });
 
   it("keeps old data visible with reduced overview opacity but excludes expired data", () => {
@@ -99,6 +154,23 @@ describe("findPollutantHotspot", () => {
 
   it("does not promote AQI 0 readings to highlighted hotspots", () => {
     expect(findPollutantHotspot([{ uid: 1, name: "zero", lat: -34, lon: -58, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { co: 0 } }], "co", now)).toBeNull();
+  });
+
+  it("keeps AQI 0 in heat features and visual groups", () => {
+    const zero: Station[] = [
+      { uid: 1, name: "zero", lat: -34.6, lon: -58.4, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { co: 0 } },
+    ];
+    expect(stationsToHeatGeoJSON(zero, "co", now).features).toHaveLength(1);
+    expect(visualGroupsForStations(zero, "co", 80, now)).toHaveLength(1);
+  });
+
+  it("keeps low AQI values in overview groups", () => {
+    const low: Station[] = [
+      { uid: 1, name: "a", lat: -34.6, lon: -58.4, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { pm10: 20 } },
+      { uid: 2, name: "b", lat: -34.7, lon: -58.5, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { pm10: 50 } },
+      { uid: 3, name: "c", lat: -31.4, lon: -64.18, aqi: null, measured_at: "2026-08-01T10:00:00Z", iaqi: { pm10: 100 } },
+    ];
+    expect(visualGroupsForStations(low, "pm10", 80, now).map((group) => group.maxAqi)).toEqual([50, 100]);
   });
 
   it("excludes foreign stations and expired data", () => {

@@ -84,6 +84,7 @@ export default function Index() {
                 onZoneClick={(z: Zone) =>
                   setSelectedZone((prev) => (prev?.id === z.id ? null : z))
                 }
+                errorMessage={errorMessage}
               />
             </div>
 

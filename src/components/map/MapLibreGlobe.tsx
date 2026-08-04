@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Region, Station, Zone } from "@/types/airQuality";
 import { aqiColor } from "@/lib/aqiHeatScale";
-import { pollutantLabel, pollutantValue, type PollutantKey } from "@/lib/pollutantHeat";
+import { freshnessMultiplierForStation, pollutantLabel, pollutantValue, type PollutantKey } from "@/lib/pollutantHeat";
 import {
   findPollutantHotspot,
   mapLibreHeatExpressions,
@@ -13,19 +13,24 @@ import {
   stationsToHeatGeoJSON,
   visualGroupsForStations,
 } from "@/lib/maplibreHeat";
+import { isStationInsideArgentina } from "@/lib/argentinaBoundary";
+import { MAPLIBRE_SOURCE_IDS, syncMapLibreSources } from "@/lib/maplibreSourceSync";
 import {
   AMBA_GLOBE_CAMERA,
   AMBA_HOTSPOT_CAMERA_ZOOM,
   ARGENTINA_GLOBE_CAMERA,
   AIR_QUALITY_LAYER_ORDER,
-  cameraTransitionDuration,
+  MAPLIBRE_GLYPHS_URL,
+  MAPLIBRE_OVERVIEW_MAX_ZOOM,
   cameraForHotspot,
   isWebGLAvailable,
   isMobileViewport,
+  moveCamera,
   shouldNavigateToHotspot,
   prefersReducedMotion,
   shouldPulseHotspot,
   shouldAutoRotate,
+  type CameraAnimation,
   type GlobeCamera,
 } from "@/lib/maplibreGlobe";
 
@@ -48,13 +53,14 @@ type MapLibreGlobeProps = {
 type MapLibreErrorEvent = {
   error?: Error;
   sourceId?: string;
+  layerId?: string;
   tile?: unknown;
 };
 
-const HEAT_SOURCE_ID = "air-quality-heat";
-const STATION_SOURCE_ID = "air-quality-stations";
-const GROUP_SOURCE_ID = "air-quality-visual-groups";
-const HOTSPOT_SOURCE_ID = "selected-hotspot";
+const HEAT_SOURCE_ID = MAPLIBRE_SOURCE_IDS.heat;
+const STATION_SOURCE_ID = MAPLIBRE_SOURCE_IDS.stations;
+const GROUP_SOURCE_ID = MAPLIBRE_SOURCE_IDS.groups;
+const HOTSPOT_SOURCE_ID = MAPLIBRE_SOURCE_IDS.hotspot;
 
 function cameraForRegion(region: Region | null): GlobeCamera {
   if (!region || region.id === "argentina") return ARGENTINA_GLOBE_CAMERA;
@@ -68,36 +74,12 @@ function cameraForRegion(region: Region | null): GlobeCamera {
   };
 }
 
-function currentGlobeCamera(map: MapLibreMap): GlobeCamera {
-  const center = map.getCenter();
-  return {
-    latitude: center.lat,
-    longitude: center.lng,
-    zoom: map.getZoom(),
-    bearing: map.getBearing(),
-    pitch: map.getPitch(),
-  };
-}
-
-function flyToCamera(map: MapLibreMap, camera: GlobeCamera, reducedMotion = false, duration?: number) {
-  map.flyTo({
-    center: [camera.longitude, camera.latitude],
-    zoom: camera.zoom,
-    bearing: camera.bearing,
-    pitch: camera.pitch,
-    duration: duration ?? cameraTransitionDuration(currentGlobeCamera(map), camera, reducedMotion),
-    speed: 0.45,
-    curve: 1.15,
-    essential: false,
-    easing: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
-  });
-}
-
 function stationFeatureCollection(stations: Station[], pollutant: PollutantKey) {
   return {
     type: "FeatureCollection" as const,
     features: stations.map((station) => {
       const value = pollutantValue(station, pollutant);
+      const isExpired = value !== null && freshnessMultiplierForStation(station) <= 0;
       return {
         type: "Feature" as const,
         geometry: { type: "Point" as const, coordinates: [station.lon, station.lat] as [number, number] },
@@ -106,6 +88,7 @@ function stationFeatureCollection(stations: Station[], pollutant: PollutantKey) 
           name: station.name,
           aqi: value ?? -1,
           hasValue: value !== null,
+          isExpired,
           color: value === null ? "#64748b" : aqiColor(value),
         },
       };
@@ -188,11 +171,48 @@ export function MapLibreGlobe({
   const userInteractedRef = useRef(false);
   const interactionTimeoutRef = useRef<number | null>(null);
   const pulseFrameRef = useRef<number | null>(null);
+  const cameraAnimationRef = useRef<CameraAnimation | null>(null);
   const lastFocusedRequestRef = useRef(0);
   const [rotationPaused, setRotationPaused] = useState(() => isMobileViewport());
   const [userInteracted, setUserInteracted] = useState(false);
   const [fatalError, setFatalError] = useState(false);
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
+
+  const moveMapCamera = useCallback((map: MapLibreMap, camera: GlobeCamera, operation: string) => {
+    cameraAnimationRef.current?.cancel();
+    cameraAnimationRef.current = moveCamera(map, camera, {
+      reducedMotion,
+      operation,
+    });
+  }, [reducedMotion]);
+
+  const zoomBy = useCallback((delta: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const center = map.getCenter();
+    moveMapCamera(
+      map,
+      {
+        latitude: center.lat,
+        longitude: center.lng,
+        zoom: Math.max(2, Math.min(12, map.getZoom() + delta)),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      },
+      delta > 0 ? "zoom-in" : "zoom-out",
+    );
+  }, [moveMapCamera]);
+
+  const resetOrientation = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const center = map.getCenter();
+    moveMapCamera(
+      map,
+      { latitude: center.lat, longitude: center.lng, zoom: map.getZoom(), bearing: 0, pitch: 5 },
+      "reset-orientation",
+    );
+  }, [moveMapCamera]);
 
   useEffect(() => {
     stationsRef.current = stations;
@@ -233,6 +253,7 @@ export function MapLibreGlobe({
         container: containerRef.current,
         style: {
           version: 8,
+          glyphs: MAPLIBRE_GLYPHS_URL,
           sources: {
             cartoDark: {
               type: "raster",
@@ -254,18 +275,21 @@ export function MapLibreGlobe({
         pitch: initialCamera.pitch,
         attributionControl: false,
       });
+      map.setProjection({ type: "globe" });
       mapRef.current = map;
-      map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
       map.on("error", (event: MapLibreErrorEvent) => {
         if (!import.meta.env.DEV) return;
         console.error("[MapLibre]", {
           message: event.error?.message,
           sourceId: event.sourceId,
+          layerId: event.layerId,
           tile: event.tile,
         });
       });
       const pauseInteraction = () => {
+        cameraAnimationRef.current?.cancel();
+        cameraAnimationRef.current = null;
         if (interactionTimeoutRef.current) window.clearTimeout(interactionTimeoutRef.current);
         userInteractedRef.current = true;
         setUserInteracted(true);
@@ -280,7 +304,6 @@ export function MapLibreGlobe({
       map.on("pitchstart", pauseInteraction);
       map.on("load", () => {
         try {
-          map?.setProjection({ type: "globe" });
           (map as MapLibreMap & { setFog?: (fog: Record<string, unknown>) => void })?.setFog?.({
             color: "#07111f",
             "high-color": "#0f172a",
@@ -289,116 +312,124 @@ export function MapLibreGlobe({
           });
           map?.addSource(HEAT_SOURCE_ID, { type: "geojson", data: heatGeoJsonRef.current });
           map?.addLayer({
-          id: "air-quality-heatmap",
-          type: "heatmap",
-          source: HEAT_SOURCE_ID,
-          paint: {
-            "heatmap-weight": mapLibreHeatExpressions.weight,
-            "heatmap-radius": mapLibreHeatExpressions.radius,
-            "heatmap-intensity": mapLibreHeatExpressions.intensity,
-            "heatmap-opacity": mapLibreHeatExpressions.opacity,
-            "heatmap-color": mapLibreHeatExpressions.color,
-          } as Record<string, unknown>,
+            id: "air-quality-heatmap",
+            type: "heatmap",
+            source: HEAT_SOURCE_ID,
+            paint: {
+              "heatmap-weight": mapLibreHeatExpressions.weight,
+              "heatmap-radius": mapLibreHeatExpressions.radius,
+              "heatmap-intensity": mapLibreHeatExpressions.intensity,
+              "heatmap-opacity": mapLibreHeatExpressions.opacity,
+              "heatmap-color": mapLibreHeatExpressions.color,
+            } as Record<string, unknown>,
           });
           map?.addSource(GROUP_SOURCE_ID, { type: "geojson", data: groupGeoJsonRef.current });
           map?.addLayer({
-          id: "air-quality-overview-outer",
-          type: "circle",
-          source: GROUP_SOURCE_ID,
-          maxzoom: 8,
-          paint: {
-            "circle-radius": overviewLayerExpressions.outerRadius,
-            "circle-color": ["get", "color"],
-            "circle-opacity": overviewLayerExpressions.outerOpacity,
-            "circle-blur": 0.82,
-          } as Record<string, unknown>,
+            id: "air-quality-overview-outer",
+            type: "circle",
+            source: GROUP_SOURCE_ID,
+            maxzoom: MAPLIBRE_OVERVIEW_MAX_ZOOM,
+            paint: {
+              "circle-radius": overviewLayerExpressions.outerRadius,
+              "circle-color": ["get", "color"],
+              "circle-opacity": overviewLayerExpressions.outerOpacity,
+              "circle-blur": 0.82,
+            } as Record<string, unknown>,
           });
           map?.addLayer({
-          id: "air-quality-overview-middle",
-          type: "circle",
-          source: GROUP_SOURCE_ID,
-          maxzoom: 8,
-          paint: {
-            "circle-radius": overviewLayerExpressions.middleRadius,
-            "circle-color": ["get", "color"],
-            "circle-opacity": overviewLayerExpressions.middleOpacity,
-            "circle-blur": 0.48,
-          } as Record<string, unknown>,
+            id: "air-quality-overview-middle",
+            type: "circle",
+            source: GROUP_SOURCE_ID,
+            maxzoom: MAPLIBRE_OVERVIEW_MAX_ZOOM,
+            paint: {
+              "circle-radius": overviewLayerExpressions.middleRadius,
+              "circle-color": ["get", "color"],
+              "circle-opacity": overviewLayerExpressions.middleOpacity,
+              "circle-blur": 0.48,
+            } as Record<string, unknown>,
           });
           map?.addLayer({
-          id: "air-quality-groups",
-          type: "circle",
-          source: GROUP_SOURCE_ID,
-          maxzoom: 8,
-          paint: {
-            "circle-radius": overviewLayerExpressions.coreRadius,
-            "circle-color": ["get", "color"],
-            "circle-opacity": overviewLayerExpressions.coreOpacity,
-            "circle-stroke-color": "rgba(255,255,255,0.62)",
-            "circle-stroke-width": 0.8,
-          } as Record<string, unknown>,
+            id: "air-quality-groups",
+            type: "circle",
+            source: GROUP_SOURCE_ID,
+            maxzoom: MAPLIBRE_OVERVIEW_MAX_ZOOM,
+            paint: {
+              "circle-radius": overviewLayerExpressions.coreRadius,
+              "circle-color": ["get", "color"],
+              "circle-opacity": overviewLayerExpressions.coreOpacity,
+              "circle-stroke-color": "rgba(255,255,255,0.62)",
+              "circle-stroke-width": 0.8,
+            } as Record<string, unknown>,
           });
           map?.addLayer({
-          id: "air-quality-group-labels",
-          type: "symbol",
-          source: GROUP_SOURCE_ID,
-          maxzoom: 8,
-          layout: {
-            "text-field": ["case", [">=", ["get", "oldPercent"], 0.5], "dato antiguo", ["to-string", ["get", "stationCount"]]],
-            "text-size": 12,
-          },
-          paint: { "text-color": "#ffffff", "text-halo-color": "rgba(2,6,23,0.8)", "text-halo-width": 1.2 },
+            id: "air-quality-group-labels",
+            type: "symbol",
+            source: GROUP_SOURCE_ID,
+            maxzoom: MAPLIBRE_OVERVIEW_MAX_ZOOM,
+            layout: {
+              "text-field": ["case", [">=", ["get", "oldPercent"], 0.5], "dato antiguo", ["to-string", ["get", "stationCount"]]],
+              "text-size": 12,
+            },
+            paint: { "text-color": "#ffffff", "text-halo-color": "rgba(2,6,23,0.8)", "text-halo-width": 1.2 },
           });
           map?.addSource(HOTSPOT_SOURCE_ID, { type: "geojson", data: hotspotGeoJsonRef.current });
           map?.addLayer({
-          id: "selected-hotspot-outer",
-          type: "circle",
-          source: HOTSPOT_SOURCE_ID,
-          paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 46, 5, 72, 8, 52, 11, 28],
-            "circle-color": ["get", "color"],
-            "circle-opacity": ["get", "pulseOpacity"],
-            "circle-blur": 0.78,
-          } as Record<string, unknown>,
+            id: "selected-hotspot-outer",
+            type: "circle",
+            source: HOTSPOT_SOURCE_ID,
+            paint: {
+              "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 46, 5, 72, 8, 52, 11, 28],
+              "circle-color": ["get", "color"],
+              "circle-opacity": ["get", "pulseOpacity"],
+              "circle-blur": 0.78,
+            } as Record<string, unknown>,
           });
           map?.addLayer({
-          id: "selected-hotspot-middle",
-          type: "circle",
-          source: HOTSPOT_SOURCE_ID,
-          paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 20, 5, 34, 8, 28, 11, 16],
-            "circle-color": ["get", "color"],
-            "circle-opacity": 0.62,
-            "circle-blur": 0.36,
-          } as Record<string, unknown>,
+            id: "selected-hotspot-middle",
+            type: "circle",
+            source: HOTSPOT_SOURCE_ID,
+            paint: {
+              "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 20, 5, 34, 8, 28, 11, 16],
+              "circle-color": ["get", "color"],
+              "circle-opacity": 0.62,
+              "circle-blur": 0.36,
+            } as Record<string, unknown>,
           });
           map?.addLayer({
-          id: "selected-hotspot-core",
-          type: "circle",
-          source: HOTSPOT_SOURCE_ID,
-          paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 5, 6, 8, 10, 10],
-            "circle-color": ["get", "color"],
-            "circle-opacity": 0.96,
-            "circle-stroke-color": "rgba(255,255,255,0.85)",
-            "circle-stroke-width": 1.2,
-          } as Record<string, unknown>,
+            id: "selected-hotspot-core",
+            type: "circle",
+            source: HOTSPOT_SOURCE_ID,
+            paint: {
+              "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 5, 6, 8, 10, 10],
+              "circle-color": ["get", "color"],
+              "circle-opacity": 0.96,
+              "circle-stroke-color": "rgba(255,255,255,0.85)",
+              "circle-stroke-width": 1.2,
+            } as Record<string, unknown>,
           });
           map?.addSource(STATION_SOURCE_ID, { type: "geojson", data: stationGeoJsonRef.current });
           map?.addLayer({
-          id: "air-quality-stations",
-          type: "circle",
-          source: STATION_SOURCE_ID,
-          minzoom: 7,
-          paint: {
+            id: "air-quality-stations",
+            type: "circle",
+            source: STATION_SOURCE_ID,
+            minzoom: 7,
+            paint: {
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 4, 10, 7, 13, 9],
             "circle-color": ["get", "color"],
-            "circle-opacity": ["case", ["get", "hasValue"], 0.9, 0.42],
-            "circle-stroke-color": "#ffffff",
-            "circle-stroke-width": 1,
+            "circle-opacity": ["case", ["get", "isExpired"], 0.34, ["get", "hasValue"], 0.9, 0.42],
+            "circle-stroke-color": ["case", ["get", "isExpired"], "rgba(226,232,240,0.78)", "#ffffff"],
+            "circle-stroke-width": ["case", ["get", "isExpired"], 1.8, 1],
           },
           });
           map?.moveLayer(AIR_QUALITY_LAYER_ORDER[AIR_QUALITY_LAYER_ORDER.length - 1]);
+          if (map) {
+            syncMapLibreSources(map, {
+              heat: heatGeoJsonRef.current,
+              stations: stationGeoJsonRef.current,
+              groups: groupGeoJsonRef.current,
+              hotspot: hotspotGeoJsonRef.current,
+            });
+          }
           map?.on("click", "air-quality-stations", (event) => {
             const uid = event.features?.[0]?.properties?.uid;
             const station = stationsRef.current.find((candidate) => candidate.uid === Number(uid));
@@ -421,6 +452,8 @@ export function MapLibreGlobe({
     return () => {
       if (interactionTimeoutRef.current) window.clearTimeout(interactionTimeoutRef.current);
       if (pulseFrameRef.current) window.cancelAnimationFrame(pulseFrameRef.current);
+      cameraAnimationRef.current?.cancel();
+      cameraAnimationRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -429,17 +462,14 @@ export function MapLibreGlobe({
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
-    (map.getSource(HEAT_SOURCE_ID) as GeoJSONSource | undefined)?.setData(heatGeoJson);
-    (map.getSource(STATION_SOURCE_ID) as GeoJSONSource | undefined)?.setData(stationGeoJson);
-    (map.getSource(GROUP_SOURCE_ID) as GeoJSONSource | undefined)?.setData(groupGeoJson);
-    (map.getSource(HOTSPOT_SOURCE_ID) as GeoJSONSource | undefined)?.setData(hotspotGeoJson);
+    syncMapLibreSources(map, { heat: heatGeoJson, stations: stationGeoJson, groups: groupGeoJson, hotspot: hotspotGeoJson });
   }, [heatGeoJson, stationGeoJson, groupGeoJson, hotspotGeoJson]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    flyToCamera(map, cameraForRegion(region), reducedMotion);
-  }, [reducedMotion, region]);
+    moveMapCamera(map, cameraForRegion(region), "region");
+  }, [moveMapCamera, region, reducedMotion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -450,14 +480,22 @@ export function MapLibreGlobe({
       targetCamera.zoom = AMBA_HOTSPOT_CAMERA_ZOOM;
       targetCamera.pitch = 10;
     }
-    if (!forceHotspotNavigation && !shouldNavigateToHotspot(currentGlobeCamera(map), targetCamera)) {
+    const center = map.getCenter();
+    const currentCamera = {
+      latitude: center.lat,
+      longitude: center.lng,
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+    };
+    if (!forceHotspotNavigation && !shouldNavigateToHotspot(currentCamera, targetCamera)) {
       const source = map.getSource(HOTSPOT_SOURCE_ID) as GeoJSONSource | undefined;
       source?.setData(hotspotFeatureCollection(hotspot, 0.42));
       return;
     }
     setUserInteracted(true);
     userInteractedRef.current = true;
-    flyToCamera(map, targetCamera, reducedMotion);
+    moveMapCamera(map, targetCamera, "hotspot");
     const resumeDelay = reducedMotion ? 300 : 14000;
     if (interactionTimeoutRef.current) window.clearTimeout(interactionTimeoutRef.current);
     interactionTimeoutRef.current = window.setTimeout(() => {
@@ -487,30 +525,61 @@ export function MapLibreGlobe({
       if (pulseFrameRef.current) window.cancelAnimationFrame(pulseFrameRef.current);
       pulseFrameRef.current = null;
     };
-  }, [focusHotspotRequest, forceHotspotNavigation, hotspot, reducedMotion]);
+  }, [focusHotspotRequest, forceHotspotNavigation, hotspot, moveMapCamera, reducedMotion]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !shouldAutoRotate(reducedMotion, rotationPaused || userInteracted, panelOpen)) return;
-    const interval = window.setInterval(() => {
-      if (!map.isMoving()) map.easeTo({ bearing: map.getBearing() + 0.035, pitch: 5, duration: 1000, easing: (t) => t });
-    }, 1000);
-    return () => window.clearInterval(interval);
+    let frame: number | null = null;
+    const rotate = () => {
+      if (!map.isMoving()) {
+        map.jumpTo({ bearing: map.getBearing() + 0.002, pitch: 5 });
+      }
+      frame = window.requestAnimationFrame(rotate);
+    };
+    frame = window.requestAnimationFrame(rotate);
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
   }, [panelOpen, reducedMotion, rotationPaused, userInteracted]);
+
+  const emptyThermalMessage = useMemo(() => {
+    if (heatGeoJson.features.length > 0 || groupGeoJson.features.length > 0) return null;
+    const stationsWithPollutant = stations.filter((station) => {
+      const value = pollutantValue(station, selectedPollutant);
+      return value !== null && Number.isFinite(value);
+    });
+    if (stationsWithPollutant.length === 0) {
+      return "No hay valores recientes disponibles para representar térmicamente este contaminante.";
+    }
+    if (stationsWithPollutant.every((station) => !station.measured_at && !station.time)) {
+      return "Hay estaciones disponibles, pero no se puede confirmar la actualidad de sus mediciones.";
+    }
+    return "No hay valores recientes disponibles para representar térmicamente este contaminante.";
+  }, [groupGeoJson.features.length, heatGeoJson.features.length, selectedPollutant, stations]);
 
   return fatalError ? null : (
     <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_50%_38%,#102033_0%,#06111f_46%,#020617_100%)]" aria-label="Globo 3D de calidad del aire">
       <div ref={containerRef} className="h-full w-full" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_42%,rgba(2,6,23,0.32)_78%,rgba(2,6,23,0.68)_100%)]" />
       <div className="absolute left-3 top-20 z-10 flex flex-wrap gap-2 md:left-auto md:right-14 md:top-3">
-        <button type="button" onClick={() => mapRef.current && flyToCamera(mapRef.current, ARGENTINA_GLOBE_CAMERA, reducedMotion)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
+        <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, ARGENTINA_GLOBE_CAMERA, "view-argentina")} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
           Ver Argentina
         </button>
-        <button type="button" onClick={() => mapRef.current && flyToCamera(mapRef.current, AMBA_GLOBE_CAMERA, reducedMotion)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
+        <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, AMBA_GLOBE_CAMERA, "view-amba")} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
           Ver AMBA
         </button>
-        <button type="button" onClick={() => mapRef.current && flyToCamera(mapRef.current, cameraForRegion(region), reducedMotion)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
+        <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, cameraForRegion(region), "reset-view")} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
           Restablecer vista
+        </button>
+        <button type="button" onClick={() => zoomBy(0.7)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
+          Acercar
+        </button>
+        <button type="button" onClick={() => zoomBy(-0.7)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
+          Alejar
+        </button>
+        <button type="button" onClick={resetOrientation} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
+          Orientar norte
         </button>
         <button type="button" onClick={() => setRotationPaused((paused) => !paused)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
           {rotationPaused ? "Reanudar rotación" : "Pausar rotación"}
@@ -522,6 +591,11 @@ export function MapLibreGlobe({
           <div className="mt-1 text-sm font-semibold">Mayor nivel informado de {pollutantLabel(selectedPollutant)}</div>
           <div className="mt-1 text-xs text-white/65">AQI {Math.round(hotspot.maxAqi)} · {hotspot.category} · {hotspot.stationCount} est.</div>
           <p className="mt-2 text-[11px] leading-relaxed text-white/48">Resumen visual basado en estaciones disponibles; no representa toda la región.</p>
+        </div>
+      )}
+      {emptyThermalMessage && (
+        <div className="absolute left-3 right-3 top-36 z-10 rounded-2xl border border-amber-200/20 bg-slate-950/64 px-3 py-2 text-sm text-amber-50/90 shadow-xl backdrop-blur-xl md:left-5 md:right-auto md:max-w-md">
+          {emptyThermalMessage}
         </div>
       )}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[min(92vw,34rem)] rounded-2xl border border-white/10 bg-slate-950/52 px-3 py-2 text-xs leading-relaxed text-white/58 backdrop-blur-xl">

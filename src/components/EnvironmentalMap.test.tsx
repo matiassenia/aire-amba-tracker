@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { EnvironmentalMap } from "./EnvironmentalMap";
-import type { Station } from "@/types/airQuality";
+import type { Region, Station, StationQueryMetadata } from "@/types/airQuality";
 
 vi.mock("@/components/map/LeafletMap", () => ({
   LeafletMap: () => <div data-testid="leaflet-mock" />,
@@ -21,17 +21,52 @@ const DATA_STATIONS: Station[] = [
   { uid: 3, name: "Cordoba", lat: -31.4, lon: -64.18, aqi: null, measured_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), iaqi: { pm25: 30, no2: 140 } },
 ];
 
-function renderMap(stations: Station[] = []) {
+const AMBA_REGION: Region = {
+  id: "amba",
+  name: "AMBA",
+  bounds: [-35, -59, -34, -57],
+  center: [-34.62, -58.45],
+  default_zoom: 9,
+  description: "Área Metropolitana de Buenos Aires",
+};
+
+const METADATA: StationQueryMetadata = {
+  region_id: "amba",
+  region_name: "AMBA",
+  source: "waqi",
+  cache_hit: false,
+  cache_ttl_seconds: 300,
+  stations_discovered: 3,
+  stations_returned: 3,
+  stations_deduplicated: 0,
+  foreign_stations_filtered: 0,
+  stations_with_data: 3,
+  pollutants_available: ["pm10"],
+  timestamps_received: 3,
+  updated_at: new Date().toISOString(),
+  coverage_partial: false,
+  unavailable_regions: [],
+  regions: [],
+};
+
+const EXPIRED_AMBA_PM10: Station[] = [
+  { uid: 8398, name: "La Boca", lat: -34.6344961, lon: -58.3631337, aqi: null, measured_at: "2026-07-30T02:00:00+00:00", source: "waqi", region_name: "AMBA", iaqi: { pm10: 14 } },
+  { uid: 8399, name: "Centenario", lat: -34.635582, lon: -58.5518647, aqi: null, measured_at: "2026-07-30T02:00:00+00:00", source: "waqi", region_name: "AMBA", iaqi: { pm10: 16 } },
+  { uid: 8400, name: "Cordoba", lat: -34.5995674, lon: -58.3915767, aqi: null, measured_at: "2026-07-30T02:00:00+00:00", source: "waqi", region_name: "AMBA", iaqi: { pm10: 15 } },
+];
+
+function renderMap(stations: Station[] = [], options: { metadata?: StationQueryMetadata | null; selectedRegion?: Region | null; errorMessage?: string | null } = {}) {
   render(
     <EnvironmentalMap
-      scope="argentina"
+      scope={options.selectedRegion?.id ?? "argentina"}
       onScopeChange={() => {}}
       stations={stations}
       zones={[]}
       regions={[]}
-      selectedRegion={null}
-      metadata={null}
+      selectedRegion={options.selectedRegion ?? null}
+      metadata={options.metadata ?? null}
       isLoading={false}
+      errorMessage={options.errorMessage ?? null}
       selectedZoneId={null}
       onZoneClick={() => {}}
     />,
@@ -168,5 +203,41 @@ describe("selector de contaminantes", () => {
     expect(panel).not.toHaveTextContent(/WAQI/i);
     expect(panel).not.toHaveTextContent(/metodología/i);
     expect(panel).not.toHaveTextContent(/comparación de fuentes/i);
+  });
+
+  it("muestra estado informativo cuando hay PM10 pero todas las mediciones están vencidas", async () => {
+    renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
+    expect(await screen.findByText("Sin mediciones recientes para PM10 en AMBA")).toBeInTheDocument();
+    expect(screen.getByText(/últimas 72 horas/i)).toBeInTheDocument();
+    expect(screen.getByText(/Esto no indica una falla del mapa/i)).toBeInTheDocument();
+    expect(screen.getByText(/Última medición disponible:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Datos consultados por la aplicación:/i)).toBeInTheDocument();
+    expect(screen.queryByText(/web rota/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ver foco en el mapa" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ver última estación" })).toBeInTheDocument();
+    expect(screen.getByText("Sin estaciones recientes para interpolar")).toBeInTheDocument();
+  });
+
+  it("muestra últimas mediciones expiradas sin convertirlas en hotspots", async () => {
+    renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
+    fireEvent.click(await screen.findByRole("button", { name: "Ver últimas mediciones" }));
+    expect(screen.getByRole("region", { name: "Últimas mediciones disponibles" })).toBeInTheDocument();
+    expect(screen.getAllByText("La Boca").length).toBeGreaterThan(0);
+    expect(screen.getByText(/PM10: 14 · Bueno/)).toBeInTheDocument();
+    expect(screen.getAllByText("Dato antiguo").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/hace \d+ días/).length).toBeGreaterThan(0);
+  });
+
+  it("diferencia contaminante sin datos de mediciones vencidas", async () => {
+    renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION });
+    fireEvent.click(await screen.findByRole("button", { name: "O₃" }));
+    expect(screen.getByText("No hay mediciones de O₃ disponibles en las estaciones de esta región.")).toBeInTheDocument();
+    expect(screen.queryByText(/Sin mediciones recientes para O₃/)).not.toBeInTheDocument();
+  });
+
+  it("mantiene backend offline como mensaje distinto", async () => {
+    renderMap([], { errorMessage: "No se pudo conectar al servicio de datos." });
+    expect(await screen.findByText("No se pudo conectar al servicio de datos.")).toBeInTheDocument();
+    expect(screen.queryByText(/Sin mediciones recientes/)).not.toBeInTheDocument();
   });
 });

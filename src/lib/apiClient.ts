@@ -1,9 +1,22 @@
 import type { Region, Station, StationQueryMetadata } from "@/types/airQuality";
 
+let apiBaseUrlLogged = false;
+let backendStatusLogged: boolean | null = null;
+
 function apiBaseUrl(): string {
   const configured = import.meta.env.VITE_API_BASE_URL;
-  if (configured) return configured.replace(/\/+$/, "");
-  if (import.meta.env.DEV) return "http://127.0.0.1:8000";
+  const baseUrl = configured
+    ? configured.replace(/\/+$/, "")
+    : import.meta.env.DEV
+      ? "http://127.0.0.1:8000"
+      : null;
+  if (baseUrl) {
+    if (import.meta.env.DEV && !apiBaseUrlLogged) {
+      console.info("[API BASE URL]", baseUrl);
+      apiBaseUrlLogged = true;
+    }
+    return baseUrl;
+  }
   throw new Error(
     "VITE_API_BASE_URL is not configured for production. " +
       "Set it in the Vercel project environment variables and redeploy."
@@ -21,8 +34,36 @@ function query(params: Record<string, string | undefined>): string {
   return text ? `?${text}` : "";
 }
 
+async function apiFetch(path: string): Promise<Response> {
+  const url = `${apiBaseUrl()}${path}`;
+  if (import.meta.env.DEV) console.info("[API REQUEST]", url);
+  try {
+    return await fetch(url);
+  } catch {
+    throw new Error("No se pudo conectar al backend");
+  }
+}
+
+export async function checkBackendHealth(): Promise<boolean> {
+  try {
+    const response = await apiFetch("/health");
+    const online = response.ok;
+    if (import.meta.env.DEV && backendStatusLogged !== online) {
+      console.info(online ? "[BACKEND ONLINE]" : "[BACKEND OFFLINE]", apiBaseUrl());
+      backendStatusLogged = online;
+    }
+    return online;
+  } catch (error) {
+    if (import.meta.env.DEV && backendStatusLogged !== false) {
+      console.warn("[BACKEND OFFLINE]", apiBaseUrl(), error);
+      backendStatusLogged = false;
+    }
+    return false;
+  }
+}
+
 export async function fetchStations(region?: string): Promise<Station[]> {
-  const response = await fetch(`${apiBaseUrl()}/stations${query({ region })}`);
+  const response = await apiFetch(`/stations${query({ region })}`);
   if (!response.ok) {
     throw new Error(`Backend stations request failed with status ${response.status}`);
   }
@@ -36,7 +77,7 @@ export async function fetchStations(region?: string): Promise<Station[]> {
 }
 
 export async function fetchRegions(): Promise<Region[]> {
-  const response = await fetch(`${apiBaseUrl()}/regions`);
+  const response = await apiFetch("/regions");
   if (!response.ok) {
     throw new Error(`Backend regions request failed with status ${response.status}`);
   }
@@ -44,7 +85,7 @@ export async function fetchRegions(): Promise<Region[]> {
 }
 
 export async function fetchStationMetadata(region?: string): Promise<StationQueryMetadata> {
-  const response = await fetch(`${apiBaseUrl()}/stations/meta${query({ region })}`);
+  const response = await apiFetch(`/stations/meta${query({ region })}`);
   if (!response.ok) {
     throw new Error(`Backend stations metadata request failed with status ${response.status}`);
   }

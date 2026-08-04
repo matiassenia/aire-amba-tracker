@@ -3,12 +3,12 @@ import { DivIcon } from "leaflet";
 import { CircleMarker, MapContainer, Marker, Pane, Popup, TileLayer, useMap } from "react-leaflet";
 import { HeatLayer } from "@/components/HeatLayer";
 import { ZonePolygons } from "@/components/map/ZonePolygons";
-import { AQI_HEAT_GRADIENT } from "@/lib/aqiHeatScale";
+import { AQI_HEAT_GRADIENT, aqiColor } from "@/lib/aqiHeatScale";
 import type { Region, Station, Zone } from "@/types/airQuality";
 import {
   heatLayerConfig,
-  heatDiagnosticsForPollutant,
   heatPointsForPollutant,
+  freshnessMultiplierForStation,
   pollutantValue,
   type PollutantKey,
 } from "@/lib/pollutantHeat";
@@ -47,45 +47,6 @@ function ZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void })
   return null;
 }
 
-// Diagnóstico temporal SOLO en desarrollo (se elimina del build de
-// producción porque import.meta.env.DEV es false en modo production).
-function HeatDiagnostics({
-  regionId,
-  zoom,
-  heatPoints,
-  config,
-}: {
-  regionId: string;
-  zoom: number;
-  heatPoints: { value: number; intensity: number }[];
-  config: ReturnType<typeof heatLayerConfig>;
-}) {
-  if (!import.meta.env.DEV) return null;
-  const values = heatPoints.map((p) => p.value);
-  const intensities = heatPoints.map((p) => p.intensity);
-  return (
-    <div className="pointer-events-none absolute right-2 top-2 z-[1000] max-w-[16rem] rounded-lg border border-white/10 bg-slate-950/85 px-2 py-1.5 font-mono text-[10px] leading-snug text-white/85 backdrop-blur">
-      <div>region: {regionId} · zoom: {zoom}</div>
-      <div>points: {heatPoints.length}</div>
-      <div>heatmap: {config ? "sí" : "no"}</div>
-      {config && (
-        <div>
-          radius: {config.radius} · blur: {config.blur}
-          <br />
-          minOpacity: {config.minOpacity} · maxZoom: {config.maxZoom}
-        </div>
-      )}
-      {heatPoints.length > 0 && (
-        <div>
-          AQI: {Math.min(...values)}–{Math.max(...values)}
-          <br />
-          peso: {Math.min(...intensities).toFixed(3)}–{Math.max(...intensities).toFixed(3)}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function LeafletMap({
   stations,
   zones,
@@ -108,10 +69,6 @@ export function LeafletMap({
   const heatConfig = useMemo(
     () => heatLayerConfig(regionId, heatPoints.length, zoom, region?.default_zoom ?? 9),
     [regionId, heatPoints.length, zoom, region?.default_zoom]
-  );
-  const heatDiagnostics = useMemo(
-    () => heatDiagnosticsForPollutant(stations, selectedPollutant),
-    [stations, selectedPollutant],
   );
   const useClusters = shouldClusterStations(regionId, zoom, stations.length);
 
@@ -192,7 +149,9 @@ export function LeafletMap({
             : stations.map((station) => {
             const value = pollutantValue(station, selectedPollutant);
             const hasValue = value !== null;
+            const isExpired = hasValue && freshnessMultiplierForStation(station) <= 0;
             const isSelected = selectedStationUid === station.uid;
+            const markerColor = hasValue ? aqiColor(value) : "#64748b";
 
             return (
               <CircleMarker
@@ -200,12 +159,13 @@ export function LeafletMap({
                 center={[station.lat, station.lon]}
                 radius={isSelected ? 8 : hasValue ? 6 : 4.5}
                 pathOptions={{
-                  color: isSelected ? "#ffffff" : hasValue ? "rgba(226,246,255,0.9)" : "rgba(255,255,255,0.42)",
-                  fillColor: hasValue ? "#67e8f9" : "#64748b",
-                  fillOpacity: hasValue ? 0.82 : 0.42,
-                  opacity: hasValue ? 0.95 : 0.58,
+                  color: isSelected ? "#ffffff" : isExpired ? "rgba(226,232,240,0.72)" : hasValue ? "rgba(226,246,255,0.9)" : "rgba(255,255,255,0.42)",
+                  fillColor: markerColor,
+                  fillOpacity: isExpired ? 0.34 : hasValue ? 0.82 : 0.42,
+                  opacity: isExpired ? 0.62 : hasValue ? 0.95 : 0.58,
                   weight: isSelected ? 2.5 : 1.5,
-                  className: hasValue ? "station-marker station-marker-active" : "station-marker",
+                  dashArray: isExpired ? "4 4" : undefined,
+                  className: isExpired ? "station-marker station-marker-expired" : hasValue ? "station-marker station-marker-active" : "station-marker",
                 }}
                 eventHandlers={{
                   click: () => onStationSelect(station),
@@ -217,6 +177,11 @@ export function LeafletMap({
                     <div className="mt-1 text-sm text-white/70">
                       {hasValue ? `Valor informado: ${value}` : "Sin datos para el contaminante activo"}
                     </div>
+                    {isExpired && (
+                      <div className="mt-1 text-sm text-amber-200/90">
+                        Dato antiguo: no se usa para interpolación.
+                      </div>
+                    )}
                     <button
                       type="button"
                       className="mt-3 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-sm text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
@@ -232,19 +197,6 @@ export function LeafletMap({
         </Pane>
       </MapContainer>
 
-      <HeatDiagnostics regionId={regionId} zoom={zoom} heatPoints={heatPoints} config={heatConfig} />
-      {import.meta.env.DEV && (
-        <div className="pointer-events-none absolute right-2 top-28 z-[1000] max-w-[16rem] rounded-lg border border-white/10 bg-slate-950/85 px-2 py-1.5 font-mono text-[10px] leading-snug text-white/85 backdrop-blur">
-          <div>recibidas: {heatDiagnostics.stationsReceived}</div>
-          <div>argentinas: {heatDiagnostics.argentineStations}</div>
-          <div>con valor: {heatDiagnostics.stationsWithPollutantValue}</div>
-          <div>fresh: {heatDiagnostics.fresh}</div>
-          <div>stale: {heatDiagnostics.stale}</div>
-          <div>old: {heatDiagnostics.old}</div>
-          <div>unknown: {heatDiagnostics.unknown}</div>
-          <div>heat points: {heatDiagnostics.heatPointsGenerated}</div>
-        </div>
-      )}
     </div>
   );
 }

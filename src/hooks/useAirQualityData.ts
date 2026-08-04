@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { Station, AirQualityData, Scope, Region, StationQueryMetadata } from '@/types/airQuality';
 import { getZonesForRegion } from '@/data/zones';
-import { fetchRegions, fetchStationMetadata, fetchStations } from '@/lib/apiClient';
+import { checkBackendHealth, fetchRegions, fetchStationMetadata, fetchStations } from '@/lib/apiClient';
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 interface CacheEntry {
@@ -62,6 +62,9 @@ export function useAirQualityData(scope: Scope): AirQualityData & { isLoading: b
       setStations([]);
       setMetadata(null);
       try {
+        if (import.meta.env.DEV) {
+          await checkBackendHealth();
+        }
         const [availableRegions, stationEntry] = await Promise.all([
           fetchRegionsFromApi(),
           fetchStationsFromApi(scope),
@@ -81,7 +84,7 @@ export function useAirQualityData(scope: Scope): AirQualityData & { isLoading: b
         setStations([]);
         setMetadata(null);
         setIsUsingMockData(false);
-        setErrorMessage('No se pudieron obtener datos ambientales reales.');
+        setErrorMessage('No se pudo conectar al backend');
       }
       
       setIsLoading(false);

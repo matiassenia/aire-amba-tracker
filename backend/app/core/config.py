@@ -15,11 +15,14 @@ class Settings(BaseSettings):
         list[str], NoDecode
     ] = Field(
         default_factory=lambda: [
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
             "https://aire-ba.vercel.app",
         ]
     )
+    cors_origin_regex: str | None = r"https://.*\.vercel\.app"
     database_url: str = "sqlite:///./backend/dev.db"
     spatial_backend: str = "in_memory"
     station_data_source: str = "waqi"
@@ -61,11 +64,14 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: str | list[str]) -> str | list[str]:
+        def normalize(origin: str) -> str:
+            return origin.strip().rstrip("/")
+
         if not isinstance(value, str):
-            return value
+            return [normalize(str(origin)) for origin in value]
         if value.lstrip().startswith("["):
-            return [str(origin) for origin in json.loads(value)]
-        return [origin.strip() for origin in value.split(",") if origin.strip()]
+            return [normalize(str(origin)) for origin in json.loads(value)]
+        return [normalize(origin) for origin in value.split(",") if origin.strip()]
 
     @field_validator("cors_origins")
     @classmethod
