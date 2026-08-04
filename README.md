@@ -1,223 +1,251 @@
-# Argentina Environmental Platform
+# Aire Argentina
 
-This project is a modular environmental intelligence platform prepared for Argentina-wide coverage.
+Aire Argentina is an interactive air-quality viewer for Argentina. It uses real station data from WAQI, a FastAPI backend, and a React/Vite frontend with MapLibre Globe and Leaflet fallback. The UI distinguishes current thermal interpolation from old measurements so stale data is not presented as current air quality.
 
-The current product still renders an air-quality map, but the backend domain is no longer scoped to a single metropolitan area. It is structured to support multiple provinces, municipalities, zones, stations, environmental variables, and future official GIS data.
+## Overview
+
+The project is split into a frontend SPA and a modular FastAPI backend:
+
+- The backend exposes regions, stations, metadata, spatial endpoints, source status, and history-ready contracts.
+- The frontend loads regions/stations through the backend only; source API tokens are never exposed to the browser.
+- Current thermal maps use measurements up to 72 hours old.
+- Measurements older than 72 hours remain visible as last available measurements and can be viewed in an explicit `Últimas mediciones` mode.
+
+## Demo / Project Status
+
+This repository contains production-oriented deployment configuration for Render (backend) and Vercel-style frontend deployment. Availability of a public production URL is not asserted here; verify the deployed environment before sharing it externally.
+
+## Features
+
+- Argentina-wide operational regions: Argentina, AMBA, Centro, Cuyo, NOA, NEA, Patagonia norte, Patagonia sur.
+- Real station ingestion from WAQI via backend.
+- National boundary filtering to remove foreign stations returned by rectangular source queries.
+- Current thermal visualization with scientific freshness limits.
+- Explicit last-measurements visualization for old station data.
+- MapLibre Globe renderer with CARTO Dark Matter tiles.
+- Leaflet fallback renderer.
+- Pollutant selector for PM2.5, PM10, NO2, O3, SO2, and CO.
+- Backend-offline, no-stations, no-pollutant-data, and expired-data-only UI states.
+- Test coverage for backend API/CORS/sources/spatial logic and frontend map/data/UI helpers.
 
 ## Architecture
 
-```text
-Frontend React/Vite
-        -> Backend API
-        -> Application use cases
-        -> Domain models
-        -> Infrastructure repositories and source connectors
+```mermaid
+flowchart LR
+  Browser[React/Vite frontend] --> Client[apiClient]
+  Client --> API[FastAPI backend]
+  API --> UseCases[Application use cases]
+  UseCases --> Repos[Repositories]
+  Repos --> WAQI[WAQI source]
+  Repos --> Seed[In-memory seed data]
+  Repos --> PostGIS[(Optional PostGIS)]
+  API --> Metadata[Station metadata]
+  Browser --> Renderers{Map renderer}
+  Renderers --> MapLibre[MapLibre Globe]
+  Renderers --> Leaflet[Leaflet fallback]
 ```
 
-The backend is a modular monolith. Domain code must not depend on FastAPI, SQLAlchemy, HTTP clients, settings, external source details, or frontend code.
+Detailed architecture: [docs/architecture.md](docs/architecture.md).
 
-## Domain Geography
+## Stack
 
-`Country` is the national boundary and top-level jurisdiction. Sprint 3 seeds only Argentina.
+| Area | Technology |
+| --- | --- |
+| Frontend | React 18, Vite 5, TypeScript, Tailwind CSS, Radix/shadcn-style components |
+| Maps | MapLibre GL JS 6, Leaflet, leaflet.heat, CARTO raster tiles |
+| Backend | FastAPI, Pydantic Settings, SQLAlchemy, Alembic, httpx |
+| Spatial | In-memory GIS repository by default; optional PostgreSQL/PostGIS path |
+| Tests | Vitest, Testing Library, pytest |
+| Deploy | Vercel-compatible frontend, Render backend config |
 
-`Province` is the first-level Argentine jurisdiction. Provinces belong to a country and carry timezone and metadata for future official identifiers.
-
-`AdministrativeArea` is a flexible planning or administrative grouping. It is separate from municipalities and zones because not every operational grouping is a municipality.
-
-`Municipality` belongs to one province and is the owner of operational zones. In CABA, the autonomous city is represented as a municipality-like operational unit for consistency.
-
-`Zone` is the environmental analysis unit used for snapshots. Every zone has `country_id`, `province_id`, `municipality_id`, centroid, polygon, timezone, and metadata. Current polygons are placeholders, not official boundaries.
-
-`Station` is an observation point from a source connector. It may later be linked to country, province, and municipality after geocoding or GIS matching.
-
-## Environmental Variables
-
-The platform is prepared for AQI, PM2.5, PM10, NO2, SO2, CO, O3, UV, temperature, humidity, wind, pressure, noise, water quality, fire, and smoke.
-
-Sprint 3 does not implement new source ingestion for these variables. It only models them through `EnvironmentalVariable` and `EnvironmentalVariableRepository`.
-
-## GIS
-
-`backend/app/gis/` contains only geographic utilities and future GIS integration points.
-
-Sprint 4 adds a PostGIS-ready persistence model while keeping SQLite available for local development. Geometry is currently persisted through portable fields such as GeoJSON JSON, WKT, WKB hex, SRID, and bounding boxes. Future PostGIS migrations can replace or complement those columns with native geometry columns and GIST/SP-GiST indexes behind repository interfaces.
-
-Sprint 4A introduces the first spatial engine boundary:
+## Repository Structure
 
 ```text
-API spatial endpoints
-  -> SpatialService
-      -> GeometryRepository
-          -> in-memory GIS repository for SQLite/dev
-          -> future PostGIS repository in infrastructure
+src/                  React frontend, map renderers, data helpers and tests
+backend/app/          FastAPI app, domain, application, infrastructure and GIS layers
+backend/tests/        Backend pytest suite
+docs/                 Technical and functional documentation
+docs/adr/             Architecture Decision Records
+gis/                  Placeholder folders/docs for future official GIS data
+render.yaml           Render backend service configuration
+docker-compose.yml    Optional local PostGIS service
 ```
 
-`GeoAlchemy2` is isolated to infrastructure. Domain models never import PostGIS, GeoAlchemy2, SQLAlchemy, or FastAPI.
+## Requirements
 
-Spatial backend selection:
+- Node.js compatible with Vite 5.
+- pnpm recommended because `pnpm-lock.yaml` is present.
+- Python 3.13.
+- A Python virtual environment with the project installed.
+- WAQI token for real station data.
+- Optional Docker Desktop for local PostGIS validation.
 
-```bash
-SPATIAL_BACKEND=in_memory  # default, SQLite/local development
-SPATIAL_BACKEND=postgis    # PostgreSQL/PostGIS
+## Installation
+
+```powershell
+cd C:\dev\boludesesPiolasCat\aire-amba-tracker
+pnpm install
+\.venv\Scripts\Activate.ps1
+python -m pip install -e .
 ```
-
-When `SPATIAL_BACKEND=postgis`, spatial endpoints use `PostGISGeometryRepository` and PostGIS functions. There is no silent production fallback from PostgreSQL to in-memory.
-
-PostGIS local development:
-
-```bash
-docker compose up -d postgis
-$env:DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/environmental_platform"
-$env:SPATIAL_BACKEND="postgis"
-.\.venv\Scripts\python.exe -m alembic upgrade head
-```
-
-PostGIS integration tests require an explicit URL:
-
-```bash
-$env:POSTGIS_TEST_DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/environmental_platform"
-.\.venv\Scripts\python.exe -m pytest backend -m postgis
-```
-
-Seed minimal PostGIS validation data:
-
-```bash
-$env:DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/environmental_platform"
-.\.venv\Scripts\python.exe -m backend.scripts.seed_postgis
-```
-
-End-to-end PostGIS validation flow from a clean checkout:
-
-```bash
-.\.venv\Scripts\python.exe -m pip install -e .
-docker compose up -d postgis
-docker compose ps
-$env:DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/environmental_platform"
-$env:POSTGIS_TEST_DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/environmental_platform_test"
-$env:SPATIAL_BACKEND="postgis"
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m backend.scripts.seed_postgis
-.\.venv\Scripts\python.exe -m pytest backend
-.\.venv\Scripts\python.exe -m pytest backend -m postgis -v
-```
-
-## PostGIS Validation Status
-
-Current local validation status: blocked because Docker Desktop/PostGIS is not reachable from this environment. The Docker client reports that `dockerDesktopLinuxEngine` is unavailable. SQLite validation remains green, and PostGIS tests are present but skip unless `POSTGIS_TEST_DATABASE_URL` is configured.
-
-Do not mark PostGIS as fully validated until:
-
-- `docker compose ps` shows `postgis` healthy.
-- `SELECT PostGIS_Version();` succeeds.
-- `alembic upgrade head` and `alembic check` pass with PostgreSQL `DATABASE_URL`.
-- `.\.venv\Scripts\python.exe -m pytest backend -m postgis -v` reports passed tests with zero skips.
-
-SRID policy:
-
-- SRID 4326 is required.
-- PostGIS `geom` is the spatial source of truth when PostGIS is active.
-- GeoJSON is the API/input-output format.
-- WKT/WKB columns are auxiliary/legacy migration aids.
-- Distance and radius parameters are public kilometers; PostGIS calculations use `geography` meters internally.
-
-GIS module responsibilities:
-
-- `geometry.py`: portable geometric utilities.
-- `formats.py`: geometry format detection.
-- `loaders.py`: GeoJSON loader and future Shapefile/IGN extension points.
-- `repositories.py`: spatial repository implementations that are not business logic.
-- `services.py`: service layer delegating spatial operations to repositories.
-- `utils.py`: WKT/SRID helpers.
-
-`gis/` is reserved for future official GeoJSON files:
-
-```text
-gis/
-  countries/
-  provinces/
-  municipalities/
-  zones/
-```
-
-No official GeoJSON is downloaded in Sprint 3. No PostGIS is used yet.
-
-## Backend Endpoints
-
-- `GET /health`
-- `GET /zones`
-- `GET /zones/{zone_id}`
-- `GET /zones/{zone_id}/current`
-- `GET /stations`
-- `GET /sources/status`
-- `GET /variables`
-- `GET /measurements`
-- `GET /measurements/{station_id}`
-- `GET /history`
-- `GET /zones/{zone_id}/history`
-- `GET /stations/{station_id}/history`
-- `GET /stations/near`
-- `GET /zones/contains`
-- `GET /zones/intersects`
-- `GET /zones/{zone_id}/geometry`
-- `GET /stations/{station_id}/geometry`
-
-Historical endpoints are contract-ready. They return persisted measurements/snapshots once ingestion persistence is wired; Sprint 4 does not add new sources or analytics.
-
-## Temporal Model
-
-`backend/app/time/` contains time windows, aggregation periods, and timezone helpers. Supported snapshot aggregation periods are instant, hourly, daily, weekly, monthly, and yearly.
-
-Repositories accept bounded filters and pagination primitives so future large datasets do not require loading full collections into memory.
 
 ## Environment Variables
 
+Copy the root example and fill local secrets yourself. `backend/.env.example` is a backend-only reference; the current settings object loads `.env` from the repository root.
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Main variables:
+
+| Variable | Side | Purpose |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | Frontend | Backend base URL for production builds. |
+| `VITE_MAP_RENDERER` | Frontend | `leaflet` or `maplibre`; invalid values fall back to Leaflet. |
+| `CORS_ORIGINS` | Backend | Comma-separated allowed browser origins. Wildcard is rejected. |
+| `WAQI_TOKEN` / `WAQI_API_TOKEN` | Backend | WAQI API token. Do not expose to frontend. |
+| `OPENAQ_API_KEY` | Backend | OpenAQ readiness key; integration is not enabled by default. |
+| `DATABASE_URL` | Backend | SQLite or PostgreSQL database URL. |
+| `SPATIAL_BACKEND` | Backend | `in_memory` or `postgis`. |
+
+Full reference: [docs/environment.md](docs/environment.md).
+
+## Local Development
+
+Run backend and frontend in separate terminals.
+
 Backend:
 
-```bash
-WAQI_TOKEN=your_waqi_token
-DEMO_MODE=false
-DATABASE_URL=sqlite:///./backend/dev.db
+```powershell
+cd C:\dev\boludesesPiolasCat\aire-amba-tracker
+\.venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
 Frontend:
 
-```bash
-VITE_API_BASE_URL=http://127.0.0.1:8000
+```powershell
+cd C:\dev\boludesesPiolasCat\aire-amba-tracker
+pnpm install
+$env:VITE_MAP_RENDERER="maplibre"
+pnpm dev
 ```
 
-The frontend does not call WAQI directly and must not expose source tokens.
+Local URLs:
 
-## Run Locally
+- Frontend: <http://127.0.0.1:8080>
+- Backend: <http://127.0.0.1:8000>
+- Health: <http://127.0.0.1:8000/health>
+- Stations: <http://127.0.0.1:8000/stations?region=argentina>
+- Metadata: <http://127.0.0.1:8000/stations/meta?region=argentina>
+- Regions: <http://127.0.0.1:8000/regions>
 
-Backend:
+Vite is configured with `strictPort: true`; if port `8080` is busy it fails instead of silently switching to `8081`.
 
-```bash
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload
-```
+## Tests
 
 Frontend:
 
-```bash
-npm install
-npm run dev
-```
-
-## Quality Commands
-
-```bash
-.\.venv\Scripts\python.exe -m ruff check backend
-.\.venv\Scripts\python.exe -m mypy backend
-.\.venv\Scripts\python.exe -m pytest backend
-.\.venv\Scripts\python.exe -m alembic check
-npx tsc -b --pretty false
-npm test -- --run
+```powershell
 npm run lint
+npm test
+npm run build
+npx tsc -b --pretty false
 ```
 
-## Current Limits
+Backend:
 
-- Seed geometries are simplified placeholders.
-- No PostGIS yet.
-- No new external sources beyond existing connectors.
-- No history, forecasting, authentication, multitenancy, queues, or AI.
+```powershell
+pytest backend
+ruff check backend
+mypy backend
+```
+
+Details: [docs/testing.md](docs/testing.md).
+
+## Build
+
+```powershell
+pnpm build
+```
+
+The MapLibre renderer is lazy-loaded but still creates a large production chunk; Vite may warn about chunks over 500 kB.
+
+## Deploy
+
+- Frontend: Vercel-compatible static build from `dist/`.
+- Backend: Render service configured in `render.yaml`.
+- Set `VITE_API_BASE_URL` in the frontend environment and redeploy after changing any `VITE_*` variable.
+- Set backend secrets such as `WAQI_TOKEN` in Render, not in Git.
+
+Deploy guide: [docs/deployment.md](docs/deployment.md).
+
+## Data Sources
+
+- WAQI is the active station data source.
+- OpenAQ connector/readiness exists but is disabled by default and is not merged into `/stations` yet.
+- CARTO Dark Matter raster tiles are used for basemaps with OpenStreetMap/CARTO attribution.
+
+Details: [docs/data-sources.md](docs/data-sources.md).
+
+## Quality And Freshness Rules
+
+- 0-6 h: full current weight.
+- 6-24 h: reduced current weight.
+- 24-72 h: old but still eligible for current thermal interpolation with reduced weight.
+- More than 72 h or unknown timestamp: excluded from current heatmap/groups/hotspots.
+- Old measurements remain visible as stations and can be shown in `Últimas mediciones` mode.
+
+Details: [docs/data-quality.md](docs/data-quality.md).
+
+## Map Renderers
+
+- `VITE_MAP_RENDERER=maplibre`: MapLibre Globe with raster CARTO basemap and GeoJSON sources/layers.
+- `VITE_MAP_RENDERER=leaflet`: Leaflet fallback with `leaflet.heat`.
+- Default renderer is Leaflet when the flag is unset or invalid.
+
+Map details: [docs/maps.md](docs/maps.md).
+
+## API
+
+Core endpoints used by the frontend:
+
+- `GET /health`
+- `GET /regions`
+- `GET /stations?region=argentina`
+- `GET /stations/meta?region=argentina`
+
+Full backend API reference: [docs/backend.md](docs/backend.md).
+
+## Current Limitations
+
+- WAQI coverage in Argentina is sparse and station update frequency depends on each source station.
+- Current heatmaps are station-derived visual interpolations, not measured values between stations.
+- OpenAQ is readiness-only and not enabled as an operational station source.
+- Official GIS datasets are not loaded yet; operational regions are rectangular source-query windows.
+- PostGIS path exists but local validation requires a reachable PostgreSQL/PostGIS service.
+
+## Roadmap
+
+- Complete OpenAQ integration only after AQI/concentration mapping and freshness policy are defined.
+- Add official GIS boundaries through the existing GIS module and repository interfaces.
+- Improve source observability and cache introspection.
+- Add CI once repository hosting and deployment policy are finalized.
+
+## Contributing
+
+Keep frontend/backend boundaries intact:
+
+- Do not expose source tokens in frontend code.
+- Keep data-quality rules covered by tests.
+- Update documentation when adding endpoints, variables, layers, or source behavior.
+- Run frontend and backend validation before opening changes.
+
+## License
+
+No license file was found in the repository at the time of this audit. Add a license before distributing or accepting external contributions.
+
+## Data Disclaimer
+
+This project visualizes third-party station data and derived visual interpolations. It is not an official regulatory air-quality product. Heatmaps estimate spatial patterns from available stations and should not be interpreted as direct measurements between stations.
