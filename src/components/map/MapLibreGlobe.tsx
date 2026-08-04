@@ -4,7 +4,7 @@ import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Region, Station, Zone } from "@/types/airQuality";
 import { aqiColor } from "@/lib/aqiHeatScale";
-import { freshnessMultiplierForStation, pollutantLabel, pollutantValue, type PollutantKey } from "@/lib/pollutantHeat";
+import { freshnessMultiplierForStation, pollutantValue, type PollutantKey } from "@/lib/pollutantHeat";
 import {
   findPollutantHotspot,
   mapLibreHeatExpressions,
@@ -194,6 +194,7 @@ export function MapLibreGlobe({
   const [rotationPaused, setRotationPaused] = useState(() => isMobileViewport());
   const [userInteracted, setUserInteracted] = useState(false);
   const [fatalError, setFatalError] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
   const moveMapCamera = useCallback((map: MapLibreMap, camera: GlobeCamera, operation: string) => {
@@ -624,47 +625,35 @@ export function MapLibreGlobe({
     <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_50%_38%,#102033_0%,#06111f_46%,#020617_100%)]" aria-label="Globo 3D de calidad del aire">
       <div ref={containerRef} className="h-full w-full" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_42%,rgba(2,6,23,0.32)_78%,rgba(2,6,23,0.68)_100%)]" />
-      <div className="absolute left-3 top-20 z-10 flex flex-wrap gap-2 md:left-auto md:right-14 md:top-3">
-        <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, ARGENTINA_GLOBE_CAMERA, "view-argentina")} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
-          Ver Argentina
-        </button>
-        <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, AMBA_GLOBE_CAMERA, "view-amba")} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
-          Ver AMBA
-        </button>
-        <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, cameraForRegion(region), "reset-view")} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
-          Restablecer vista
-        </button>
-        <button type="button" onClick={() => zoomBy(0.7)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
-          Acercar
-        </button>
-        <button type="button" onClick={() => zoomBy(-0.7)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
-          Alejar
-        </button>
-        <button type="button" onClick={resetOrientation} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
-          Orientar norte
-        </button>
-        <button type="button" onClick={() => setRotationPaused((paused) => !paused)} className="rounded-full border border-white/10 bg-slate-950/55 px-3 py-1.5 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
-          {rotationPaused ? "Reanudar rotación" : "Pausar rotación"}
-        </button>
-      </div>
-      {hotspot && (
-        <div className="absolute right-3 top-36 z-10 max-w-[min(92vw,20rem)] rounded-3xl border border-white/10 bg-slate-950/58 p-3 text-white shadow-[0_24px_80px_rgba(0,0,0,0.36)] backdrop-blur-2xl md:right-5 md:top-16">
-          <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/45">Foco destacado</div>
-          <div className="mt-1 text-sm font-semibold">Mayor nivel informado de {pollutantLabel(selectedPollutant)}</div>
-          <div className="mt-1 text-xs text-white/65">AQI {Math.round(hotspot.maxAqi)} · {hotspot.category} · {hotspot.stationCount} est.</div>
-          <p className="mt-2 text-[11px] leading-relaxed text-white/48">Resumen visual basado en estaciones disponibles; no representa toda la región.</p>
+      <div className="absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[calc(12rem+env(safe-area-inset-top))] z-10 flex flex-col items-end gap-2 md:right-14 md:top-3">
+        <div className="overflow-hidden rounded-full border border-white/10 bg-slate-950/58 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <button type="button" onClick={() => zoomBy(0.7)} className="grid min-h-11 min-w-11 place-items-center border-b border-white/10 text-lg font-semibold text-white/78 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70" aria-label="Acercar mapa">
+            +
+          </button>
+          <button type="button" onClick={() => zoomBy(-0.7)} className="grid min-h-11 min-w-11 place-items-center text-lg font-semibold text-white/78 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70" aria-label="Alejar mapa">
+            -
+          </button>
         </div>
-      )}
+        <button type="button" onClick={() => setControlsOpen((open) => !open)} className="grid min-h-11 min-w-11 place-items-center rounded-full border border-white/10 bg-slate-950/58 text-sm font-semibold text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70" aria-expanded={controlsOpen} aria-label="Más controles del mapa">
+          ◎
+        </button>
+        {controlsOpen && (
+          <div className="grid gap-1 rounded-2xl border border-white/10 bg-slate-950/72 p-1 text-xs text-white/78 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-2xl">
+            <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, ARGENTINA_GLOBE_CAMERA, "view-argentina")} className="min-h-10 rounded-xl px-3 text-left transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">Argentina</button>
+            <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, AMBA_GLOBE_CAMERA, "view-amba")} className="min-h-10 rounded-xl px-3 text-left transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">AMBA</button>
+            <button type="button" onClick={() => mapRef.current && moveMapCamera(mapRef.current, cameraForRegion(region), "reset-view")} className="min-h-10 rounded-xl px-3 text-left transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">Restablecer</button>
+            <button type="button" onClick={resetOrientation} className="min-h-10 rounded-xl px-3 text-left transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">Norte</button>
+            <button type="button" onClick={() => setRotationPaused((paused) => !paused)} className="min-h-10 rounded-xl px-3 text-left transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-200/70">
+              {rotationPaused ? "Rotar" : "Pausar"}
+            </button>
+          </div>
+        )}
+      </div>
       {emptyThermalMessage && (
-        <div className="absolute left-3 right-3 top-36 z-10 rounded-2xl border border-amber-200/20 bg-slate-950/64 px-3 py-2 text-sm text-amber-50/90 shadow-xl backdrop-blur-xl md:left-5 md:right-auto md:max-w-md">
+        <div className="absolute left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] top-[calc(15rem+env(safe-area-inset-top))] z-10 rounded-2xl border border-amber-200/20 bg-slate-950/64 px-3 py-2 text-sm text-amber-50/90 shadow-xl backdrop-blur-xl md:left-5 md:right-auto md:max-w-md md:top-16">
           {emptyThermalMessage}
         </div>
       )}
-      <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[min(92vw,34rem)] rounded-2xl border border-white/10 bg-slate-950/52 px-3 py-2 text-xs leading-relaxed text-white/58 backdrop-blur-xl">
-        <div className="font-medium text-white/78">Focos según estaciones disponibles</div>
-        <div>Color: nivel AQI · Intensidad: frescura y cantidad de estaciones</div>
-        <div>Las zonas transparentes pueden no tener cobertura. Basemap: CARTO Dark Matter con datos © OpenStreetMap contributors © CARTO.</div>
-      </div>
     </div>
   );
 }

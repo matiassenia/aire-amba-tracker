@@ -73,6 +73,10 @@ function renderMap(stations: Station[] = [], options: { metadata?: StationQueryM
   );
 }
 
+async function openAirQualitySheet() {
+  fireEvent.click(await screen.findByRole("button", { name: "Abrir detalle de calidad del aire" }));
+}
+
 describe("selector de contaminantes", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
@@ -207,6 +211,7 @@ describe("selector de contaminantes", () => {
 
   it("muestra estado informativo cuando hay PM10 pero todas las mediciones están vencidas", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
+    await openAirQualitySheet();
     expect(await screen.findByText("Sin mediciones recientes para PM10 en AMBA")).toBeInTheDocument();
     expect(screen.getByText(/últimas 72 horas/i)).toBeInTheDocument();
     expect(screen.getByText(/Esto no indica una falla del mapa/i)).toBeInTheDocument();
@@ -214,13 +219,16 @@ describe("selector de contaminantes", () => {
     expect(screen.getByText(/Datos consultados por la aplicación:/i)).toBeInTheDocument();
     expect(screen.queryByText(/web rota/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ver foco en el mapa" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ver última estación" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ver últimas mediciones" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Leyenda" }));
     expect(screen.getByText("Sin estaciones recientes para interpolar")).toBeInTheDocument();
   });
 
   it("activa el modo Últimas mediciones desde el selector y cambia la leyenda", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
-    fireEvent.click(await screen.findByRole("button", { name: "Últimas mediciones" }));
+    await openAirQualitySheet();
+    fireEvent.click(await screen.findByRole("button", { name: "Histórico" }));
+    fireEvent.click(screen.getByRole("button", { name: "Leyenda" }));
     expect(screen.getByText("Visualización de últimas mediciones")).toBeInTheDocument();
     expect(screen.getAllByText("Últimas mediciones disponibles").length).toBeGreaterThan(0);
     expect(screen.getByText(/No representa la calidad del aire actual/)).toBeInTheDocument();
@@ -228,6 +236,7 @@ describe("selector de contaminantes", () => {
 
   it("Ver últimas mediciones activa el modo histórico y abre mediciones", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
+    await openAirQualitySheet();
     fireEvent.click(await screen.findByRole("button", { name: "Ver últimas mediciones" }));
     expect(screen.getByText("Visualización de últimas mediciones")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Últimas mediciones disponibles" })).toBeInTheDocument();
@@ -235,6 +244,7 @@ describe("selector de contaminantes", () => {
 
   it("Escape cierra el panel contextual abierto", async () => {
     renderMap(DATA_STATIONS);
+    await openAirQualitySheet();
     expect(await screen.findByRole("region", { name: "Información de PM10" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("region", { name: "Información de PM10" })).not.toBeInTheDocument();
@@ -242,6 +252,7 @@ describe("selector de contaminantes", () => {
 
   it("muestra últimas mediciones expiradas sin convertirlas en hotspots", async () => {
     renderMap(EXPIRED_AMBA_PM10, { selectedRegion: AMBA_REGION, metadata: METADATA });
+    await openAirQualitySheet();
     fireEvent.click(await screen.findByRole("button", { name: "Ver últimas mediciones" }));
     expect(screen.getByRole("region", { name: "Últimas mediciones disponibles" })).toBeInTheDocument();
     expect(screen.getAllByText("La Boca").length).toBeGreaterThan(0);
@@ -259,6 +270,7 @@ describe("selector de contaminantes", () => {
 
   it("mantiene backend offline como mensaje distinto", async () => {
     renderMap([], { errorMessage: "No se pudo conectar al servicio de datos." });
+    await openAirQualitySheet();
     expect(await screen.findByText("No se pudo conectar al servicio de datos.")).toBeInTheDocument();
     expect(screen.queryByText(/Sin mediciones recientes/)).not.toBeInTheDocument();
   });

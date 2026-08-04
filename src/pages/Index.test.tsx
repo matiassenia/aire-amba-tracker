@@ -27,14 +27,14 @@ describe("guía educativa desde el mapa", () => {
   it("el header contiene el acceso a la guía", async () => {
     render(<Index />);
 
-    expect(screen.getByRole("button", { name: "Guía para leer el mapa" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Abrir guía para leer el mapa" })).toBeInTheDocument();
     await screen.findByTestId("leaflet-mock");
   });
 
   it("tocar el botón del header abre EducationGuide", async () => {
     render(<Index />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Guía para leer el mapa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir guía para leer el mapa" }));
 
     expect(await screen.findByRole("dialog", { name: "Guía para leer el mapa" })).toBeInTheDocument();
     expect(screen.getByText("Sobre WAQI y los datos")).toBeInTheDocument();
@@ -43,7 +43,7 @@ describe("guía educativa desde el mapa", () => {
   it("Escape cierra la guía general", async () => {
     render(<Index />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Guía para leer el mapa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir guía para leer el mapa" }));
     fireEvent.keyDown(document, { key: "Escape" });
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Guía para leer el mapa" })).not.toBeInTheDocument());
@@ -52,7 +52,7 @@ describe("guía educativa desde el mapa", () => {
   it("cerrar la guía devuelve el foco al botón del header", async () => {
     render(<Index />);
 
-    const guideButton = screen.getByRole("button", { name: "Guía para leer el mapa" });
+    const guideButton = screen.getByRole("button", { name: "Abrir guía para leer el mapa" });
     fireEvent.click(guideButton);
     fireEvent.click(await screen.findByRole("button", { name: "Cerrar" }));
 
@@ -82,7 +82,7 @@ describe("guía educativa desde el mapa", () => {
     fireEvent.click(await screen.findByRole("button", { name: "PM2.5" }));
     expect(screen.getByRole("region", { name: "Información de PM2.5" })).not.toHaveTextContent(/WAQI/i);
 
-    fireEvent.click(screen.getByRole("button", { name: "Guía para leer el mapa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir guía para leer el mapa" }));
     expect(await screen.findByRole("dialog", { name: "Guía para leer el mapa" })).toHaveTextContent(/WAQI/i);
   });
 });

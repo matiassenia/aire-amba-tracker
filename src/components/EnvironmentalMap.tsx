@@ -1,6 +1,5 @@
 import React, { Suspense } from "react";
 import { X } from "lucide-react";
-import { BottomBar } from "@/components/layout/BottomBar";
 import { StaticMapFallback } from "@/components/map/StaticMapFallback";
 import type { Region, Scope, Station, StationQueryMetadata, Zone } from "@/types/airQuality";
 import { cn } from "@/lib/utils";
@@ -31,7 +30,6 @@ import {
   coverageConfidenceLabel,
   coverageConfidenceMessage,
   formatDistanceKm,
-  pointCoverage,
   stationCoverageInfo,
 } from "@/lib/coverage";
 
@@ -91,6 +89,12 @@ type EnvironmentalMapProps = {
   errorMessage?: string | null;
   selectedZoneId: string | null;
   onZoneClick: (z: Zone) => void;
+  appTitle?: string;
+  dataSource?: string | null;
+  summaryLabel?: string;
+  lastUpdated?: string | null;
+  onOpenGuide?: () => void;
+  guideButtonRef?: React.RefObject<HTMLButtonElement>;
 };
 
 const POLLUTANT_PANEL_COPY: Record<
@@ -153,12 +157,14 @@ function StationPanel({
   regionName,
   stations,
   onClose,
+  embedded = false,
 }: {
   station: Station;
   selectedPollutant: PollutantKey;
   regionName: string;
   stations: Station[];
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const freshness = stationFreshness(station.measured_at ?? station.time);
   const selectedValue = pollutantValue(station, selectedPollutant);
@@ -169,14 +175,23 @@ function StationPanel({
   const available = POLLUTANT_KEYS.filter((key) => pollutantValue(station, key) !== null);
   const missing = POLLUTANT_KEYS.filter((key) => pollutantValue(station, key) === null);
   const coverage = stationCoverageInfo(station, stations);
+  const surfaceClass = embedded
+    ? "border-t border-white/10 py-3 first:border-t-0 first:pt-0"
+    : "mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3";
+  const subtleSurfaceClass = embedded
+    ? "border-t border-white/10 py-3"
+    : "mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3";
+  const noticeClass = embedded
+    ? "mt-3 border-l-2 border-amber-200/45 pl-3 text-sm text-amber-50/90"
+    : "mt-3 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90";
 
   return (
     <section
       aria-label="Detalle de estación"
       className={cn(
-        "fixed inset-x-3 bottom-20 z-40 max-h-[62vh] overflow-y-auto rounded-[1.65rem] border border-white/10 bg-slate-950/78 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in",
-        "max-h-[calc(100dvh-7rem)] overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]",
-        "md:absolute md:bottom-auto md:left-auto md:right-5 md:top-20 md:w-[24rem] md:max-h-[calc(100dvh-7rem)]",
+        embedded
+          ? "text-white"
+          : "fixed inset-x-3 bottom-20 z-40 max-h-[62vh] overflow-y-auto rounded-[1.65rem] border border-white/10 bg-slate-950/78 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in max-h-[calc(100dvh-7rem)] overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))] md:absolute md:bottom-auto md:left-auto md:right-5 md:top-20 md:w-[24rem] md:max-h-[calc(100dvh-7rem)]",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -197,7 +212,7 @@ function StationPanel({
         </button>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+      <div className={cn(embedded ? "mt-3" : "mt-4 rounded-2xl border border-white/10 bg-white/[0.06] p-3")}>
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-sm text-white/65">{pollutantLabel(selectedPollutant)}</div>
@@ -211,7 +226,7 @@ function StationPanel({
         </div>
       </div>
 
-      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+      <div className={surfaceClass}>
         <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
           Posibles fuentes habituales
         </div>
@@ -248,29 +263,29 @@ function StationPanel({
       </div>
 
       {selectedMeasurement && (
-        <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/75">
+        <p className={cn(embedded ? "mt-3 text-sm text-white/68" : "mt-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/75")}>
           Última medición: {formatMeasurementDate(selectedMeasurement.measuredAt)} · {formatAge(selectedMeasurement.ageHours)}
         </p>
       )}
 
       {selectedMeasurementExpired ? (
-        <p className="mt-3 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90">
+        <p className={noticeClass}>
           Dato antiguo: no se usa para interpolación térmica ni para hotspots recientes.
         </p>
       ) : freshness.status === "stale" && (
-        <p className="mt-3 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90">
+        <p className={noticeClass}>
           Esta medición puede estar desactualizada y no representa el aire actual.
         </p>
       )}
 
       {freshness.status === "aging" && (
-        <p className="mt-3 rounded-2xl border border-amber-200/15 bg-amber-200/8 px-3 py-2 text-sm text-amber-50/90">
+        <p className={noticeClass}>
           Esta medición tiene más de {RECENT_AFTER_HOURS} h: sigue contando para cobertura, pero
           está envejeciendo.
         </p>
       )}
 
-      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+      <div className={subtleSurfaceClass}>
         <div className="flex items-center justify-between gap-2">
           <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">
             Cobertura
@@ -309,7 +324,7 @@ function StationPanel({
         )}
       </div>
 
-      <div className="mt-4">
+      <div className={cn(embedded ? "border-t border-white/10 py-3" : "mt-4")}>
         <div className="text-sm font-medium text-white/80">Disponibles</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {available.length ? (
@@ -324,7 +339,7 @@ function StationPanel({
         </div>
       </div>
 
-      <div className="mt-4 border-t border-white/10 pt-3">
+      <div className="border-t border-white/10 pt-3">
         <div className="text-sm font-medium text-white/75">Sin datos</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {missing.length ? (
@@ -349,6 +364,7 @@ function PollutantInfoPanel({
   onViewHotspot,
   onViewLatestStation,
   onClose,
+  embedded = false,
 }: {
   pollutant: PollutantKey;
   hotspot: PollutantHotspot | null;
@@ -356,19 +372,29 @@ function PollutantInfoPanel({
   onViewHotspot: () => void;
   onViewLatestStation: () => void;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const info = pollutantInfo(pollutant);
   const copy = POLLUTANT_PANEL_COPY[pollutant];
   const latest = coverageSummary.latestMeasurement;
   const expiredOnly = coverageSummary.state === "expired-data-only";
+  const blockClass = embedded
+    ? "border-t border-white/10 py-3 first:border-t-0 first:pt-0"
+    : "rounded-2xl border border-white/10 bg-white/[0.06] p-3";
+  const accentBlockClass = embedded
+    ? "border-t border-white/10 py-3"
+    : "rounded-2xl border border-cyan-200/15 bg-cyan-200/8 p-3";
+  const warningBlockClass = embedded
+    ? "border-l-2 border-amber-200/45 pl-3 py-1"
+    : "rounded-2xl border border-amber-200/15 bg-amber-200/8 p-3";
 
   return (
     <section
       aria-label={`Información de ${info.shortName}`}
       className={cn(
-        "fixed inset-x-3 bottom-20 z-40 max-h-[48vh] overflow-y-auto rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in",
-        "max-h-[calc(100dvh-7rem)] overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]",
-        "md:absolute md:bottom-auto md:left-auto md:right-5 md:top-20 md:w-[24rem] md:max-h-[calc(100dvh-7rem)]",
+        embedded
+          ? "text-white"
+          : "fixed inset-x-3 bottom-20 z-40 max-h-[48vh] overflow-y-auto rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl animate-fade-in max-h-[calc(100dvh-7rem)] overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))] md:absolute md:bottom-auto md:left-auto md:right-5 md:top-20 md:w-[24rem] md:max-h-[calc(100dvh-7rem)]",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -391,7 +417,7 @@ function PollutantInfoPanel({
 
       <dl className="mt-3 grid gap-2 text-sm leading-relaxed">
         {expiredOnly && latest && (
-          <div className="rounded-2xl border border-amber-200/15 bg-amber-200/8 p-3">
+          <div className={warningBlockClass}>
             <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-100/75">Último nivel informado</dt>
             <dd className="mt-1 text-white/82">
               {info.shortName} {latest.value} · {latest.category}
@@ -410,7 +436,7 @@ function PollutantInfoPanel({
           </div>
         )}
         {!expiredOnly && hotspot && (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.07] p-3">
+          <div className={blockClass}>
             <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/70">Mayor nivel disponible</dt>
             <dd className="mt-1 text-white/78">
               AQI {Math.round(hotspot.maxAqi)} · {hotspot.category} · {hotspot.stationCount} estaciones
@@ -427,29 +453,29 @@ function PollutantInfoPanel({
             </button>
           </div>
         )}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+        <div className={blockClass}>
           <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">Qué es</dt>
           <dd className="mt-1 text-white/76">{info.description}</dd>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+        <div className={blockClass}>
           <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">Fuentes frecuentes</dt>
           <dd className="mt-1 text-white/76">{info.commonSources}</dd>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1">
-          <div className="rounded-2xl border border-emerald-200/15 bg-emerald-200/8 p-3">
+        <div className={cn("grid gap-2", embedded ? "border-t border-white/10 py-3" : "sm:grid-cols-2 md:grid-cols-1")}>
+          <div className={cn(embedded ? "" : "rounded-2xl border border-emerald-200/15 bg-emerald-200/8 p-3")}>
             <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-100/70">Cuando está bajo</dt>
             <dd className="mt-1 text-white/76">{copy.low}</dd>
           </div>
-          <div className="rounded-2xl border border-amber-200/15 bg-amber-200/8 p-3">
+          <div className={cn(embedded ? "" : "rounded-2xl border border-amber-200/15 bg-amber-200/8 p-3")}>
             <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-100/75">Cuando está alto</dt>
             <dd className="mt-1 text-white/76">{copy.high}</dd>
           </div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3">
+        <div className={blockClass}>
           <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/65">Lo que no significa</dt>
           <dd className="mt-1 text-white/76">{copy.notMeaning}</dd>
         </div>
-        <div className="rounded-2xl border border-cyan-200/15 bg-cyan-200/8 p-3">
+        <div className={accentBlockClass}>
           <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/70">Cómo se representa en el mapa</dt>
           <dd className="mt-1 text-white/76">{copy.mapRepresentation}</dd>
         </div>
@@ -506,6 +532,7 @@ function LatestMeasurementsPanel({
 }
 
 type ContextPanel = "summary" | "measurements" | "station" | null;
+type BottomSheetState = "collapsed" | "half" | "expanded";
 
 function ExpiredDataNotice({
   regionName,
@@ -516,6 +543,7 @@ function ExpiredDataNotice({
   showMeasurements,
   onToggleMeasurements,
   onSelectStation,
+  embedded = false,
 }: {
   regionName: string;
   pollutantLabelText: string;
@@ -525,10 +553,11 @@ function ExpiredDataNotice({
   showMeasurements: boolean;
   onToggleMeasurements: () => void;
   onSelectStation: (station: Station) => void;
+  embedded?: boolean;
 }) {
   const appRecentlyUpdated = metadataWasUpdatedRecently(metadata);
   return (
-    <section className="pointer-events-auto max-w-[min(92vw,34rem)] rounded-3xl border border-amber-200/18 bg-slate-950/72 p-4 text-white shadow-2xl backdrop-blur-2xl" aria-label="Estado de mediciones antiguas">
+    <section className={cn(embedded ? "text-white" : "pointer-events-auto max-w-[min(92vw,34rem)] rounded-3xl border border-amber-200/18 bg-slate-950/72 p-4 text-white shadow-2xl backdrop-blur-2xl")} aria-label="Estado de mediciones antiguas">
       <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-100/75">Datos disponibles, no recientes</div>
       <h2 className="mt-1 text-base font-semibold text-white">Sin mediciones recientes para {pollutantLabelText} en {regionName}</h2>
       <p className="mt-2 text-sm leading-relaxed text-white/76">
@@ -543,10 +572,10 @@ function ExpiredDataNotice({
           La aplicación consultó la fuente recientemente, pero las estaciones no publicaron mediciones más nuevas.
         </p>
       )}
-      <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm leading-relaxed text-white/72">
+      <p className={cn(embedded ? "mt-3 border-l-2 border-white/18 pl-3 text-sm leading-relaxed text-white/70" : "mt-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm leading-relaxed text-white/72")}>
         Esto no indica una falla del mapa. La visualización térmica solo se genera con datos suficientemente recientes.
       </p>
-      <details className="mt-3 rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white/70">
+      <details className={cn(embedded ? "mt-3 border-t border-white/10 py-3 text-sm text-white/70" : "mt-3 rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white/70")}>
         <summary className="cursor-pointer font-medium text-white/82">¿Por qué no se colorea el mapa?</summary>
         <p className="mt-2 leading-relaxed">
           Las zonas térmicas se calculan únicamente con mediciones de hasta 72 horas de antigüedad. En esta región, las últimas estaciones disponibles superan ese límite. Para evitar representar como actual una situación antigua, el mapa muestra las estaciones pero no interpola áreas entre ellas.
@@ -624,6 +653,116 @@ function IntensityLegend({
   );
 }
 
+function MobileAirQualitySheet({
+  state,
+  onStateChange,
+  pollutantLabelText,
+  statusLabel,
+  viewMode,
+  onViewModeChange,
+  selectedStation,
+  children,
+}: {
+  state: BottomSheetState;
+  onStateChange: (state: BottomSheetState) => void;
+  pollutantLabelText: string;
+  statusLabel: string;
+  viewMode: MapViewMode;
+  onViewModeChange: (mode: MapViewMode) => void;
+  selectedStation: Station | null;
+  children: React.ReactNode;
+}) {
+  const dragStart = React.useRef<number | null>(null);
+  const nextExpanded = state === "collapsed" ? "half" : "expanded";
+  const nextCollapsed = state === "expanded" ? "half" : "collapsed";
+
+  return (
+    <section
+      aria-label="Estado de calidad del aire"
+      className={cn(
+        "pointer-events-auto absolute inset-x-0 bottom-0 z-40 mx-auto w-full max-w-3xl rounded-t-[1.65rem] border border-white/10 bg-slate-950/88 text-white shadow-[0_-24px_80px_rgba(0,0,0,0.46)] backdrop-blur-2xl transition-[height,transform] duration-200 ease-out",
+        "px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.85rem,env(safe-area-inset-bottom))]",
+        state === "collapsed" && "h-[calc(6.2rem+env(safe-area-inset-bottom))]",
+        state === "half" && "h-[42dvh] min-h-[18rem]",
+        state === "expanded" && "h-[82dvh]",
+        "md:left-auto md:right-[max(1rem,env(safe-area-inset-right))] md:top-[max(5rem,calc(4.5rem+env(safe-area-inset-top)))] md:h-auto md:max-h-[calc(100dvh-7rem)] md:w-[25rem] md:rounded-[1.65rem] md:pb-4",
+      )}
+    >
+      <button
+        type="button"
+        className="flex h-11 w-full items-center justify-center focus:outline-none focus:ring-2 focus:ring-cyan-200/70 md:hidden"
+        aria-label={state === "collapsed" ? "Abrir detalle de calidad del aire" : "Contraer detalle de calidad del aire"}
+        onClick={() => onStateChange(state === "collapsed" ? "half" : "collapsed")}
+        onPointerDown={(event) => {
+          dragStart.current = event.clientY;
+        }}
+        onPointerUp={(event) => {
+          if (dragStart.current === null) return;
+          const delta = event.clientY - dragStart.current;
+          dragStart.current = null;
+          if (delta < -24) onStateChange(nextExpanded);
+          if (delta > 24) onStateChange(nextCollapsed);
+        }}
+      >
+        <span className="h-1.5 w-12 rounded-full bg-white/28" />
+      </button>
+
+      <div className="flex items-start justify-between gap-3 md:pt-4">
+        <div className="min-w-0">
+          <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-100/62">
+            {viewMode === "latest" ? "Histórico" : "Actual"}
+          </div>
+          <h2 className="truncate text-lg font-semibold leading-tight text-white">{pollutantLabelText}</h2>
+          <p className="truncate text-sm text-white/62">{statusLabel}</p>
+        </div>
+        {selectedStation && (
+          <span className="max-w-[44%] truncate rounded-full border border-white/10 bg-white/8 px-3 py-1 text-xs text-white/70">
+            {selectedStation.name}
+          </span>
+        )}
+      </div>
+
+      {state !== "collapsed" && (
+        <div className="mt-3 flex rounded-full border border-white/10 bg-white/[0.06] p-1" role="group" aria-label="Modo de visualización">
+          {([
+            ["current", "Actual"],
+            ["latest", "Histórico"],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={viewMode === mode}
+              onClick={() => onViewModeChange(mode)}
+              className={cn(
+                "min-h-10 flex-1 rounded-full px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-cyan-200/70",
+                viewMode === mode ? "bg-white/18 text-white" : "text-white/58 hover:bg-white/10 hover:text-white",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {state !== "collapsed" && (
+        <div className={cn("mt-3 min-h-0 pr-1", state === "half" ? "max-h-[calc(42dvh-10rem)] overflow-hidden" : "max-h-[calc(82dvh-10rem)] overflow-y-auto overscroll-contain md:max-h-[calc(100dvh-15rem)]")}>
+          {children}
+        </div>
+      )}
+
+      {state === "half" && (
+        <button
+          type="button"
+          onClick={() => onStateChange("expanded")}
+          className="mt-3 hidden min-h-11 w-full rounded-full border border-white/10 bg-white/8 text-sm font-medium text-white/72 transition hover:bg-white/14 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70 md:block"
+        >
+          Ver más
+        </button>
+      )}
+    </section>
+  );
+}
+
 export function EnvironmentalMap({
   className,
   scope,
@@ -637,15 +776,22 @@ export function EnvironmentalMap({
   errorMessage = null,
   selectedZoneId,
   onZoneClick,
+  appTitle = "Aire Argentina",
+  dataSource = null,
+  summaryLabel,
+  lastUpdated,
+  onOpenGuide,
+  guideButtonRef,
 }: EnvironmentalMapProps) {
   const [selectedPollutant, setSelectedPollutant] = React.useState<PollutantKey>("pm10");
   const [selectedStation, setSelectedStation] = React.useState<Station | null>(null);
-  const [pollutantPanelOpen, setPollutantPanelOpen] = React.useState(true);
   const [mapLibreUnavailable, setMapLibreUnavailable] = React.useState(false);
   const [focusHotspotRequest, setFocusHotspotRequest] = React.useState(0);
   const [forceHotspotNavigation, setForceHotspotNavigation] = React.useState(false);
   const [viewMode, setViewMode] = React.useState<MapViewMode>("current");
   const [contextPanel, setContextPanel] = React.useState<ContextPanel>("summary");
+  const [sheetState, setSheetState] = React.useState<BottomSheetState>("collapsed");
+  const [legendOpen, setLegendOpen] = React.useState(false);
 
   const fallbackMap = (
     <StaticMapFallback zones={zones} onZoneClick={onZoneClick} selectedZoneId={selectedZoneId ?? undefined} />
@@ -688,7 +834,10 @@ export function EnvironmentalMap({
   }, [selectedStation, stations]);
 
   React.useEffect(() => {
-    if (selectedStation) setContextPanel("station");
+    if (selectedStation) {
+      setContextPanel("station");
+      setSheetState("half");
+    }
   }, [selectedStation]);
 
   React.useEffect(() => {
@@ -704,11 +853,12 @@ export function EnvironmentalMap({
         setContextPanel("summary");
         return;
       }
-      if (pollutantPanelOpen) setPollutantPanelOpen(false);
+      if (sheetState !== "collapsed") setSheetState("collapsed");
+      if (legendOpen) setLegendOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pollutantPanelOpen, selectedStation]);
+  }, [legendOpen, selectedStation, sheetState]);
 
   const coverageMessage = React.useMemo(() => {
     if (isLoading) return "Actualizando estaciones reales...";
@@ -722,10 +872,71 @@ export function EnvironmentalMap({
     return null;
   }, [errorMessage, heatPointCount, isLoading, metadata?.coverage_partial, scope, selectedPollutantLabel, stations.length, thermalCoverage.state]);
 
-  const regionCoverage = React.useMemo(() => {
-    if (isLoading || stations.length === 0 || !selectedRegion) return null;
-    return pointCoverage(selectedRegion.center[0], selectedRegion.center[1], stations);
-  }, [isLoading, selectedRegion, stations]);
+  const airQualityStatus = React.useMemo(() => {
+    if (errorMessage) return "Sin conexión";
+    if (isLoading) return "Actualizando";
+    if (thermalCoverage.state === "expired-data-only") return "Dato antiguo";
+    if (thermalCoverage.state === "no-pollutant-data") return "Sin datos";
+    if (hotspot?.category) return hotspot.category;
+    if (thermalCoverage.latestMeasurement?.category) return thermalCoverage.latestMeasurement.category;
+    return stations.length > 0 ? "Disponible" : "Sin estaciones";
+  }, [errorMessage, hotspot?.category, isLoading, stations.length, thermalCoverage.latestMeasurement?.category, thermalCoverage.state]);
+
+  const changeViewMode = React.useCallback((mode: MapViewMode) => {
+    setViewMode(mode);
+    if (mode === "latest") setContextPanel("measurements");
+  }, []);
+
+  const sheetContent = selectedStation ? (
+    <StationPanel
+      embedded
+      station={selectedStation}
+      selectedPollutant={selectedPollutant}
+      regionName={selectedRegion?.name ?? "Región no informada"}
+      stations={stations}
+      onClose={() => {
+        setSelectedStation(null);
+        setContextPanel("summary");
+      }}
+    />
+  ) : thermalCoverage.state === "expired-data-only" && !errorMessage ? (
+    <ExpiredDataNotice
+      embedded
+      regionName={selectedRegion?.name ?? (scope === "argentina" ? "Argentina" : "esta región")}
+      pollutantLabelText={selectedPollutantLabel}
+      pollutant={selectedPollutant}
+      summary={thermalCoverage}
+      metadata={metadata}
+      showMeasurements={contextPanel === "measurements" || sheetState === "expanded"}
+      onToggleMeasurements={() => {
+        changeViewMode("latest");
+        setContextPanel("measurements");
+        setSheetState("expanded");
+      }}
+      onSelectStation={(station) => {
+        changeViewMode("latest");
+        setSelectedStation(station);
+      }}
+    />
+  ) : (
+    <PollutantInfoPanel
+      embedded
+      pollutant={selectedPollutant}
+      hotspot={hotspot}
+      coverageSummary={thermalCoverage}
+      onViewHotspot={() => {
+        setForceHotspotNavigation(true);
+        setFocusHotspotRequest((request) => request + 1);
+      }}
+      onViewLatestStation={() => {
+        if (thermalCoverage.latestMeasurement) {
+          changeViewMode("latest");
+          setSelectedStation(thermalCoverage.latestMeasurement.station);
+        }
+      }}
+      onClose={() => setSheetState("collapsed")}
+    />
+  );
 
   return (
     <div
@@ -746,7 +957,7 @@ export function EnvironmentalMap({
                 viewMode={viewMode}
                 selectedStationUid={selectedStation?.uid ?? null}
                 selectedZoneId={selectedZoneId}
-                panelOpen={pollutantPanelOpen || Boolean(selectedStation)}
+                panelOpen={sheetState !== "collapsed" || Boolean(selectedStation)}
                 hotspot={hotspot}
                 focusHotspotRequest={focusHotspotRequest}
                 forceHotspotNavigation={forceHotspotNavigation}
@@ -771,11 +982,48 @@ export function EnvironmentalMap({
         </MapErrorBoundary>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex flex-col gap-2 md:inset-x-auto md:left-5 md:top-5 md:w-auto">
-        <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-950/48 p-1 shadow-2xl backdrop-blur-2xl">
-          <span className="hidden rounded-full px-3 py-2 text-sm font-medium text-white/70 md:inline-flex">
-            {selectedRegion?.name ?? (scope === "argentina" ? "Argentina" : "Región")}
-          </span>
+      <div className="pointer-events-none absolute left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-20 flex flex-col gap-2 md:right-auto md:w-[min(42rem,calc(100vw-2rem))]">
+        <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-[1.35rem] border border-white/10 bg-slate-950/52 px-3 py-2 shadow-2xl backdrop-blur-2xl">
+          <div className="min-w-0">
+            <div className="truncate text-[15px] font-semibold leading-tight text-white">{appTitle}</div>
+            <div className="truncate text-xs text-white/58">
+              {selectedRegion?.name ?? (scope === "argentina" ? "Argentina" : "Región")}{dataSource ? ` · ${dataSource}` : ""}{summaryLabel ? ` · ${summaryLabel}` : ""}
+            </div>
+          </div>
+          <button
+            ref={guideButtonRef}
+            type="button"
+            onClick={onOpenGuide}
+            className="grid min-h-11 min-w-11 place-items-center rounded-full border border-white/10 bg-white/8 text-sm font-semibold text-white/72 transition hover:bg-white/14 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
+            aria-label="Abrir guía para leer el mapa"
+          >
+            ?
+          </button>
+        </div>
+
+        {regions.length > 1 && (
+          <nav
+            aria-label="Seleccionar región"
+            className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-950/45 p-1 shadow-xl backdrop-blur-2xl"
+          >
+            {regions.map((region) => (
+              <button
+                key={region.id}
+                type="button"
+                onClick={() => onScopeChange(region.id)}
+                aria-pressed={scope === region.id}
+                className={cn(
+                  "min-h-11 whitespace-nowrap rounded-full px-4 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-cyan-200/70",
+                  scope === region.id ? "bg-white/18 text-white" : "text-white/58 hover:bg-white/10 hover:text-white",
+                )}
+              >
+                {region.name}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-950/48 p-1 shadow-xl backdrop-blur-2xl">
           {POLLUTANTS.map((pollutant) => {
             const hasData = available.includes(pollutant.key);
             const isSelected = selectedPollutant === pollutant.key;
@@ -787,7 +1035,7 @@ export function EnvironmentalMap({
                   const changed = selectedPollutant !== pollutant.key;
                   setForceHotspotNavigation(false);
                   setSelectedPollutant(pollutant.key);
-                  setPollutantPanelOpen(true);
+                  setSheetState("half");
                   if (changed && hotspotsByPollutant.get(pollutant.key)) {
                     setForceHotspotNavigation(false);
                     setFocusHotspotRequest((request) => request + 1);
@@ -795,7 +1043,7 @@ export function EnvironmentalMap({
                 }}
                 aria-pressed={isSelected}
                 className={cn(
-                  "min-h-10 whitespace-nowrap rounded-full px-3.5 text-sm font-medium transition duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-200/70",
+                  "min-h-11 whitespace-nowrap rounded-full px-3.5 text-sm font-medium transition duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-200/70",
                   isSelected
                     ? "bg-white/18 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]"
                     : "text-white/62 hover:bg-white/10 hover:text-white",
@@ -807,98 +1055,31 @@ export function EnvironmentalMap({
             );
           })}
         </div>
-
-        <div className="pointer-events-auto flex w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/58 p-1 shadow-xl backdrop-blur-2xl" role="group" aria-label="Modo de visualización">
-          {([
-            ["current", "Actual"],
-            ["latest", "Últimas mediciones"],
-          ] as const).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={viewMode === mode}
-              onClick={() => {
-                setViewMode(mode);
-                if (mode === "latest") setContextPanel("measurements");
-              }}
-              className={cn(
-                "min-h-10 rounded-full px-3 text-sm font-medium transition duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-200/70",
-                viewMode === mode ? "bg-white/18 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-          <span className="sr-only" aria-live="polite">
-            Modo activo: {viewMode === "current" ? "Actual" : "Últimas mediciones"}
-          </span>
-        </div>
-
-        {coverageMessage && (
-          <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
-            {coverageMessage}
-          </div>
-        )}
-
-        {metadata && metadata.foreign_stations_filtered > 0 && (
-          <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
-            Se descartaron {metadata.foreign_stations_filtered} estaciones fuera de Argentina.
-          </div>
-        )}
-
-        {usesReducedOldData && (
-          <div className="pointer-events-auto w-fit max-w-[min(92vw,32rem)] rounded-full border border-amber-200/20 bg-amber-300/10 px-3 py-1.5 text-sm text-amber-50/90 shadow-xl backdrop-blur-xl">
-            Esta visualización incluye datos antiguos con intensidad reducida. Revisá la fecha de cada estación.
-          </div>
-        )}
-
-        {thermalCoverage.state === "expired-data-only" && !errorMessage && (
-          <ExpiredDataNotice
-            regionName={selectedRegion?.name ?? (scope === "argentina" ? "Argentina" : "esta región")}
-            pollutantLabelText={selectedPollutantLabel}
-            pollutant={selectedPollutant}
-            summary={thermalCoverage}
-            metadata={metadata}
-            showMeasurements={contextPanel === "measurements"}
-            onToggleMeasurements={() => {
-              setViewMode("latest");
-              setContextPanel("measurements");
-            }}
-            onSelectStation={(station) => {
-              setViewMode("latest");
-              setSelectedStation(station);
-            }}
-          />
-        )}
-
-        {errorMessage && (
-          <div className="pointer-events-auto w-fit max-w-[min(92vw,32rem)] rounded-full border border-red-300/20 bg-red-300/10 px-3 py-1.5 text-sm text-red-50 shadow-xl backdrop-blur-xl">
-            {errorMessage}
-          </div>
-        )}
-
-        {!coverageMessage && regionCoverage?.nearest && (
-          <div className="pointer-events-auto w-fit max-w-[min(92vw,30rem)] rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 text-sm text-white/72 shadow-xl backdrop-blur-xl">
-            Estación más cercana al centro de la región: "{regionCoverage.nearest.station.name}" a{" "}
-            {formatDistanceKm(regionCoverage.nearest.distanceKm)} ·{" "}
-            {coverageConfidenceLabel(regionCoverage.confidence)}
-          </div>
-        )}
       </div>
 
-      <div className="pointer-events-none absolute bottom-[5.6rem] left-3 right-3 z-20 flex justify-center md:bottom-5 md:left-auto md:right-5 md:justify-end">
-        <div className="pointer-events-auto">
+      <div className="pointer-events-none absolute bottom-[calc(7rem+env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] z-30 flex flex-col items-start gap-2 md:bottom-[max(1rem,env(safe-area-inset-bottom))] md:left-[max(1rem,env(safe-area-inset-left))]">
+        <button
+          type="button"
+          onClick={() => setLegendOpen((open) => !open)}
+          className="pointer-events-auto min-h-11 rounded-full border border-white/10 bg-slate-950/60 px-4 text-sm font-medium text-white/75 shadow-xl backdrop-blur-2xl transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
+          aria-expanded={legendOpen}
+        >
+          Leyenda
+        </button>
+        {legendOpen && (
+          <div className="pointer-events-auto">
           <IntensityLegend
             label={selectedPollutantLabel}
             pointCount={viewMode === "latest" ? historicalPointCount : heatPointCount}
             coverageState={thermalCoverage.state}
             viewMode={viewMode}
           />
-        </div>
+          </div>
+        )}
       </div>
 
       {viewMode === "latest" && historicalPointCount > 0 && (
-        <div className="pointer-events-none absolute inset-x-3 top-[8.75rem] z-20 flex justify-center md:inset-x-auto md:left-5 md:top-[8.5rem] md:justify-start">
+        <div className="pointer-events-none absolute inset-x-3 top-[12.5rem] z-20 flex justify-center md:inset-x-auto md:left-[max(1rem,env(safe-area-inset-left))] md:top-[13rem] md:justify-start">
           <div className="pointer-events-auto max-w-[min(92vw,32rem)] rounded-2xl border border-violet-200/15 bg-slate-950/62 px-3 py-2 text-sm text-white/78 shadow-xl backdrop-blur-2xl">
             <div className="font-medium text-violet-100">Visualización de últimas mediciones</div>
             <div className="text-xs text-white/58">
@@ -908,36 +1089,38 @@ export function EnvironmentalMap({
         </div>
       )}
 
-      {pollutantPanelOpen && contextPanel !== "station" && (
-        <PollutantInfoPanel
-          pollutant={selectedPollutant}
-          hotspot={hotspot}
-          coverageSummary={thermalCoverage}
-          onViewHotspot={() => {
-            setForceHotspotNavigation(true);
-            setFocusHotspotRequest((request) => request + 1);
-          }}
-          onViewLatestStation={() => {
-            if (thermalCoverage.latestMeasurement) {
-              setViewMode("latest");
-              setSelectedStation(thermalCoverage.latestMeasurement.station);
-            }
-          }}
-          onClose={() => setPollutantPanelOpen(false)}
-        />
-      )}
-
-      {selectedStation && (
-        <StationPanel
-          station={selectedStation}
-          selectedPollutant={selectedPollutant}
-          regionName={selectedRegion?.name ?? "Región no informada"}
-          stations={stations}
-          onClose={() => setSelectedStation(null)}
-        />
-      )}
-
-      <BottomBar scope={scope} onScopeChange={onScopeChange} regions={regions} />
+      <MobileAirQualitySheet
+        state={sheetState}
+        onStateChange={setSheetState}
+        pollutantLabelText={selectedPollutantLabel}
+        statusLabel={airQualityStatus}
+        viewMode={viewMode}
+        onViewModeChange={changeViewMode}
+        selectedStation={selectedStation}
+      >
+        {errorMessage ? (
+          <div className="rounded-2xl border border-red-300/20 bg-red-300/10 p-3 text-sm text-red-50">
+            {errorMessage}
+          </div>
+        ) : (
+          <>
+            {coverageMessage && (
+              <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/72">
+                {coverageMessage}
+              </div>
+            )}
+            {usesReducedOldData && (
+              <div className="mb-3 rounded-2xl border border-amber-200/20 bg-amber-300/10 px-3 py-2 text-sm text-amber-50/90">
+                Esta visualización incluye datos antiguos con intensidad reducida.
+              </div>
+            )}
+            {lastUpdated && (
+              <div className="mb-3 text-xs text-white/42">Actualizado {lastUpdated}</div>
+            )}
+            {sheetContent}
+          </>
+        )}
+      </MobileAirQualitySheet>
     </div>
   );
 }
